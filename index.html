@@ -155,19 +155,13 @@
 
   <!-- ===================== LOGIN ===================== -->
   <section id="telaLogin" class="cartao oculto">
-    <div class="seg">
-      <button id="abaEntrar" class="ativa" type="button">Entrar</button>
-      <button id="abaCriar" type="button">Criar acesso</button>
-    </div>
+    <h2>Entrar</h2>
+    <div class="sub">Acesso criado pelo gestor.</div>
     <form id="formLogin" autocomplete="on">
-      <div id="campoNome" class="oculto">
-        <label for="nome">Seu nome</label>
-        <input id="nome" type="text" autocomplete="name">
-      </div>
-      <label for="email">E-mail</label>
-      <input id="email" type="email" autocomplete="username" required>
+      <label for="email">Usuário</label>
+      <input id="email" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
       <label for="senha">Senha</label>
-      <input id="senha" type="password" autocomplete="current-password" required minlength="8">
+      <input id="senha" type="password" autocomplete="current-password" required>
       <button class="btn" id="btnLogin" type="submit">Entrar</button>
       <button class="link" id="btnEsqueci" type="button">Esqueci a senha</button>
       <div id="msgLogin"></div>
@@ -353,6 +347,36 @@
     </div>
   </section>
 
+  <!-- ===================== USUÁRIOS (só gestor) ===================== -->
+  <section id="telaUsuarios" class="aba oculto">
+    <form id="formNovoUsuario" class="cartao" autocomplete="off">
+      <h2>Criar acesso</h2>
+      <div class="sub">Só você (gestor) cria os acessos. A pessoa entra com o <b>usuário</b> e a <b>senha</b> que você definir aqui.</div>
+      <label for="nuNome">Nome</label>
+      <input id="nuNome" type="text" maxlength="80" required placeholder="Ex.: Maria (secretária)">
+      <div class="linha2">
+        <div><label for="nuUsuario">Usuário</label><input id="nuUsuario" type="text" maxlength="30" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="ex.: maria"></div>
+        <div><label for="nuSenha">Senha (mín. 8)</label><input id="nuSenha" type="text" minlength="8" maxlength="72" required autocomplete="new-password"></div>
+      </div>
+      <label>Papel</label>
+      <div class="radio">
+        <label><input type="radio" name="nuPapel" value="secretaria" checked> Secretária</label>
+        <label><input type="radio" name="nuPapel" value="gestor"> Gestor</label>
+      </div>
+      <div class="sub" style="margin-top:6px">Secretária: lança vendas, depósitos, despesas e cadastra veículos, mas não altera nem exclui nada depois de lançado.</div>
+      <button class="btn" id="btnNovoUsuario" type="submit">Criar acesso</button>
+      <div id="msgNovoUsuario"></div>
+    </form>
+    <div class="cartao">
+      <div class="topo"><h2>Acessos</h2><button class="link" id="btnAtualizarUsuarios" type="button">Atualizar</button></div>
+      <table>
+        <thead><tr><th>Nome</th><th>Usuário</th><th>Papel</th><th></th></tr></thead>
+        <tbody id="tabelaUsuarios"></tbody>
+      </table>
+      <div id="msgUsuarios"></div>
+    </div>
+  </section>
+
   <div id="rodape" class="oculto" style="text-align:center">
     <button class="link" data-sair type="button">Sair</button>
   </div>
@@ -388,11 +412,30 @@
     <button data-aba="telaCargas" class="ativa" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 6h11v9H3zM14 9h4l3 3v3h-7zM6.5 19a2 2 0 110-4 2 2 0 010 4zm11 0a2 2 0 110-4 2 2 0 010 4z"/></svg>Cargas</button>
     <button data-aba="telaVeiculos" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 5h16v4H4zM4 11h16v4H4zM4 17h10v3H4z"/></svg>Veículos</button>
     <button data-aba="telaCarteira" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 7a2 2 0 012-2h13v3H5v9h15v-3h1v5H5a2 2 0 01-2-2zM14 10h8v4h-8a2 2 0 010-4z"/></svg>Carteira</button>
+    <button data-aba="telaUsuarios" type="button" id="navUsuarios" class="oculto"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 11a4 4 0 110-8 4 4 0 010 8zm-7 9a7 7 0 0114 0zm15-9a3 3 0 110-6 3 3 0 010 6zm1.5 2a5.5 5.5 0 014.5 7h-5a8.9 8.9 0 00-2.4-6.3A5.4 5.4 0 0118.5 13z"/></svg>Usuários</button>
     <button data-aba="telaDespesas" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h9l5 5v15H6zM14 3v5h5M9 12h8v2H9zm0 4h8v2H9z"/></svg>Despesas</button>
   </div>
 </nav>
 
 <!-- ===================== FICHA / CADASTRO DE VEÍCULO ===================== -->
+<dialog id="dlgUsuario">
+  <form class="corpo" id="formUsuario" method="dialog">
+    <div class="topo"><h2 id="tituloUsuario">Acesso</h2><button class="link" value="fechar" formnovalidate>Fechar</button></div>
+    <div class="sub" id="infoUsuario"></div>
+    <label for="duSenha">Nova senha (mín. 8)</label>
+    <input id="duSenha" type="text" minlength="8" maxlength="72" autocomplete="new-password">
+    <button class="btn sec" id="btnDuSenha" type="button">Trocar senha</button>
+    <label>Papel</label>
+    <div class="radio">
+      <label><input type="radio" name="duPapel" value="secretaria"> Secretária</label>
+      <label><input type="radio" name="duPapel" value="gestor"> Gestor</label>
+    </div>
+    <button class="btn sec" id="btnDuPapel" type="button">Salvar papel</button>
+    <button class="btn" id="btnDuBloquear" type="button">Bloquear acesso</button>
+    <div id="msgDu"></div>
+  </form>
+</dialog>
+
 <dialog id="dlgVeiculo">
   <form class="corpo" id="formVeiculo" method="dialog">
     <div class="topo"><h2 id="tituloVeiculo">Cadastrar veículo</h2><button class="link" value="fechar" formnovalidate>Fechar</button></div>
@@ -445,8 +488,8 @@ const NOME_CAT = Object.fromEntries([...CATEGORIAS.ord, ...CATEGORIAS.ext]);
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => document.querySelectorAll(sel);
 const TELAS = ["telaLogin", "telaNovaSenha", "telaPendente"];
-const ABAS = ["telaCargas", "telaVeiculos", "telaCarteira", "telaDespesas"];
-const TITULOS = { telaCargas: "Lançamento de Cargas", telaVeiculos: "Veículos", telaCarteira: "Carteira de Clientes", telaDespesas: "Despesas" };
+const ABAS = ["telaCargas", "telaVeiculos", "telaCarteira", "telaDespesas", "telaUsuarios"];
+const TITULOS = { telaCargas: "Lançamento de Cargas", telaVeiculos: "Veículos", telaCarteira: "Carteira de Clientes", telaDespesas: "Despesas", telaUsuarios: "Usuários" };
 const msg = (el, t, tipo = "erro") => { $(el).innerHTML = t ? `<div class="msg ${tipo}">${t}</div>` : ""; };
 const normalizar = (p) => (p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 const placaValida = (p) => /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(p);
@@ -460,7 +503,8 @@ const agoraLocal = () => { const d = new Date(); d.setSeconds(0, 0); return new 
 function traduzir(e) {
   const m = (e && (e.message || e.error_description || String(e))) || "";
   const l = m.toLowerCase();
-  if (l.includes("invalid login")) return "E-mail ou senha incorretos.";
+  if (l.includes("invalid login")) return "Usuário ou senha incorretos.";
+  if (l.includes("banned")) return "Acesso bloqueado. Fale com o gestor.";
   if (l.includes("email not confirmed")) return "E-mail ainda não confirmado. Abra o link enviado ao seu e-mail.";
   if (l.includes("already registered")) return "Este e-mail já tem cadastro. Use Entrar.";
   if (l.includes("duplicate key") && l.includes("placa")) return "Já existe um veículo com essa placa.";
@@ -473,7 +517,7 @@ function traduzir(e) {
 // ---------------- Estado ----------------
 let usuario = null, perfil = null, recuperando = false;
 let veiculos = [], precos = [], acessos = {}, saldos = {}, extrato = [];
-let criando = false, filtroVeic = "cacamba", veiculoEditando = null;
+let filtroVeic = "cacamba", veiculoEditando = null;
 
 function mostrarTela(t) {
   [...TELAS, ...ABAS].forEach(x => $(x).classList.toggle("oculto", x !== t));
@@ -487,42 +531,25 @@ function mostrarTela(t) {
   $("titulo").textContent = TITULOS[t] || "Areia Limpa";
   if (logado) window.scrollTo(0, 0);
 }
-$$("nav.barra button").forEach(b => b.onclick = () => { mostrarTela(b.dataset.aba); if (b.dataset.aba === "telaDespesas") carregarDespesas(); if (b.dataset.aba === "telaCarteira") carregarSaldos(); });
+$$("nav.barra button").forEach(b => b.onclick = () => { mostrarTela(b.dataset.aba); if (b.dataset.aba === "telaDespesas") carregarDespesas(); if (b.dataset.aba === "telaCarteira") carregarSaldos(); if (b.dataset.aba === "telaUsuarios") carregarUsuarios(); });
 
 // ---------------- Login ----------------
-$("abaEntrar").onclick = () => modoLogin(false);
-$("abaCriar").onclick = () => modoLogin(true);
-function modoLogin(criar) {
-  criando = criar;
-  $("abaEntrar").classList.toggle("ativa", !criar);
-  $("abaCriar").classList.toggle("ativa", criar);
-  $("campoNome").classList.toggle("oculto", !criar);
-  $("btnLogin").textContent = criar ? "Criar acesso" : "Entrar";
-  $("btnEsqueci").classList.toggle("oculto", criar);
-  $("senha").autocomplete = criar ? "new-password" : "current-password";
-  msg("msgLogin", "");
-}
+const DOMINIO_USUARIOS = "areialimpa.local";
+/** Usuário vira o e-mail interno; quem digitar um e-mail (gestor) entra com ele mesmo. */
+const loginParaEmail = (t) => { t = (t || "").trim().toLowerCase(); return t.includes("@") ? t : `${t}@${DOMINIO_USUARIOS}`; };
 $("formLogin").onsubmit = async (ev) => {
   ev.preventDefault();
-  const email = $("email").value.trim().toLowerCase(), senha = $("senha").value;
+  const email = loginParaEmail($("email").value), senha = $("senha").value;
   $("btnLogin").disabled = true; msg("msgLogin", "");
   try {
-    if (criando) {
-      const nome = $("nome").value.trim();
-      if (!nome) throw new Error("Informe seu nome.");
-      const { data, error } = await db.auth.signUp({ email, password: senha, options: { data: { nome }, emailRedirectTo: location.origin + location.pathname } });
-      if (error) throw error;
-      if (!data.session) { msg("msgLogin", "Acesso criado. Confirme pelo link enviado ao seu e-mail e depois entre.", "ok"); modoLogin(false); }
-    } else {
-      const { error } = await db.auth.signInWithPassword({ email, password: senha });
-      if (error) throw error;
-    }
+    const { error } = await db.auth.signInWithPassword({ email, password: senha });
+    if (error) throw error;
   } catch (e) { msg("msgLogin", traduzir(e)); }
   finally { $("btnLogin").disabled = false; }
 };
 $("btnEsqueci").onclick = async () => {
   const email = $("email").value.trim();
-  if (!email) return msg("msgLogin", "Digite seu e-mail acima.");
+  if (!email.includes("@")) return msg("msgLogin", "Esqueceu a senha? Peça ao gestor para criar uma nova para você.", "aviso");
   const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
   msg("msgLogin", error ? traduzir(error) : "Se o e-mail estiver cadastrado, você receberá um link para criar nova senha.", error ? "erro" : "ok");
 };
@@ -552,6 +579,9 @@ async function carregarPerfil() {
   if (perfil.papel === "pendente") return mostrarTela("telaPendente");
   $("ola").textContent = `Olá, ${perfil.nome || usuario.email}`;
   $("tituloDespesas").textContent = perfil.papel === "gestor" ? "Despesas lançadas" : "Despesas lançadas por você";
+  const gestor = perfil.papel === "gestor";
+  $("navUsuarios").classList.toggle("oculto", !gestor);
+  document.querySelector("nav.barra .in").style.gridTemplateColumns = `repeat(${gestor ? 5 : 4}, 1fr)`;
   mostrarTela("telaCargas");
   $("quando").value = agoraLocal(); $("quando").max = agoraLocal();
   $("dataCredito").value = hojeISO(); $("dataDespesa").value = hojeISO();
@@ -780,6 +810,10 @@ function abrirVeiculo(v) {
       <div class="cartao" style="margin:0;background:var(--suave)"><div class="sub">Carteira</div><div style="font-size:24px;font-weight:800">${moeda(s ? s.saldo : 0)}</div><div class="sub">de saldo${s ? `<br>${moeda(s.depositado)} depositados · ${moeda(s.usado)} usados` : ""}</div></div></div>`;
   } else $("fichaResumo").innerHTML = "";
   msg("msgVeiculo", "");
+  const soLeitura = !!v && perfil?.papel !== "gestor";
+  $$("#formVeiculo input").forEach(i => { if (i.id !== "vPlaca") i.disabled = soLeitura; });
+  $("btnSalvarVeiculo").classList.toggle("oculto", soLeitura);
+  if (soLeitura) msg("msgVeiculo", "Somente o gestor pode alterar um veículo já cadastrado.", "aviso");
   $("dlgVeiculo").showModal();
 }
 $("formVeiculo").onsubmit = async (ev) => {
@@ -891,6 +925,81 @@ $("formDespesa").onsubmit = async (ev) => {
 
 setInterval(() => { if (perfil && perfil.papel !== "pendente" && !$("telaCargas").classList.contains("oculto")) carregarHoje(); }, 60000);
 setInterval(() => { if (perfil && perfil.papel !== "pendente") carregarDash(); }, 300000);
+
+// ---------------- USUÁRIOS (só gestor) ----------------
+let usuarios = [], usuarioEditando = null;
+async function gerenciar(corpo) {
+  const { data, error } = await db.functions.invoke("gerenciar-usuarios", { body: corpo });
+  if (error) {
+    let m = error.message;
+    try { const j = await error.context.json(); m = j.erro || m; } catch (_) {}
+    throw new Error(m);
+  }
+  if (data?.erro) throw new Error(data.erro);
+  return data;
+}
+async function carregarUsuarios() {
+  msg("msgUsuarios", "");
+  try {
+    usuarios = (await gerenciar({ acao: "listar" })).usuarios || [];
+    const eu = usuario?.id;
+    $("tabelaUsuarios").innerHTML = usuarios.map(u => `<tr data-id="${u.id}" style="cursor:pointer">
+      <td>${esc(u.nome || "—")}${u.id === eu ? ' <span class="tag ouro">você</span>' : ""}</td>
+      <td class="pl">${esc(u.usuario || (u.email || "").split("@")[0])}</td>
+      <td>${u.papel === "gestor" ? "Gestor" : u.papel === "secretaria" ? "Secretária" : "Aguardando"}</td>
+      <td>${u.ativo === false ? '<span class="tag bloq">Bloqueado</span>' : '<span class="tag ok">Ativo</span>'}</td></tr>`).join("");
+    $$("#tabelaUsuarios tr").forEach(tr => tr.onclick = () => abrirUsuario(usuarios.find(x => x.id === tr.dataset.id)));
+  } catch (e) { msg("msgUsuarios", traduzir(e)); }
+}
+$("btnAtualizarUsuarios").onclick = carregarUsuarios;
+$("formNovoUsuario").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const u = $("nuUsuario").value.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(u)) return msg("msgNovoUsuario", "Usuário: 3 a 30 letras minúsculas ou números, sem espaço e sem acento (pode usar . - _).");
+  $("btnNovoUsuario").disabled = true; msg("msgNovoUsuario", "");
+  try {
+    await gerenciar({ acao: "criar", nome: $("nuNome").value.trim(), usuario: u, senha: $("nuSenha").value,
+      papel: document.querySelector("input[name=nuPapel]:checked").value });
+    msg("msgNovoUsuario", `Acesso criado. Usuário: <b>${esc(u)}</b>. Entregue a senha pessoalmente.`, "ok");
+    $("nuNome").value = ""; $("nuUsuario").value = ""; $("nuSenha").value = "";
+    carregarUsuarios();
+  } catch (e) { msg("msgNovoUsuario", traduzir(e)); }
+  finally { $("btnNovoUsuario").disabled = false; }
+};
+function abrirUsuario(u) {
+  usuarioEditando = u;
+  const eu = u.id === usuario?.id;
+  $("tituloUsuario").textContent = u.nome || "Acesso";
+  $("infoUsuario").innerHTML = `Usuário: <b>${esc(u.usuario || u.email)}</b> · ${u.ativo === false ? "bloqueado" : "ativo"}`;
+  $("duSenha").value = "";
+  $$("input[name=duPapel]").forEach(r => { r.checked = r.value === u.papel; r.disabled = eu; });
+  $("btnDuPapel").classList.toggle("oculto", eu);
+  $("btnDuBloquear").classList.toggle("oculto", eu);
+  $("btnDuBloquear").textContent = u.ativo === false ? "Desbloquear acesso" : "Bloquear acesso";
+  msg("msgDu", "");
+  $("dlgUsuario").showModal();
+}
+async function acaoUsuario(corpo, ok) {
+  try { await gerenciar({ id: usuarioEditando.id, ...corpo }); msg("msgDu", ok, "ok"); carregarUsuarios(); }
+  catch (e) { msg("msgDu", traduzir(e)); }
+}
+$("btnDuSenha").onclick = () => {
+  const s = $("duSenha").value;
+  if (s.length < 8) return msg("msgDu", "A senha precisa ter pelo menos 8 caracteres.");
+  acaoUsuario({ acao: "senha", senha: s }, "Senha alterada.");
+};
+$("btnDuPapel").onclick = () => {
+  const papel = document.querySelector("input[name=duPapel]:checked")?.value;
+  if (!papel) return msg("msgDu", "Escolha o papel.");
+  acaoUsuario({ acao: "papel", papel }, "Papel alterado.");
+};
+$("btnDuBloquear").onclick = () => {
+  const bloquear = usuarioEditando.ativo !== false;
+  if (!confirm(bloquear ? "Bloquear este acesso? A pessoa não conseguirá mais entrar." : "Desbloquear este acesso?")) return;
+  usuarioEditando.ativo = !bloquear;
+  $("btnDuBloquear").textContent = bloquear ? "Desbloquear acesso" : "Bloquear acesso";
+  acaoUsuario({ acao: "bloquear", bloqueado: bloquear }, bloquear ? "Acesso bloqueado." : "Acesso desbloqueado.");
+};
 
 // ---------------- PAINEL (dashboard) ----------------
 const diaLocal = (d) => { const x = new Date(d); return new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
