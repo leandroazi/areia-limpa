@@ -38,6 +38,13 @@
   .linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   button { font: inherit; cursor: pointer; }
   .btn { width: 100%; padding: 14px; border: 0; border-radius: 14px; background: var(--carvao); color: var(--areiaviva); font-weight: 700; font-size: 16px; margin-top: 16px; }
+  .acoes { margin: -4px 0 16px; }
+  .acoes .btn { margin-top: 0; }
+  .acoes .principal { font-size: 18px; padding: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .acoes2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .acoes2 .btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 8px; font-size: 15px; }
+  .acoes2 .btn small { font-size: 12px; font-weight: 600; color: var(--verde); }
+  .acoes .btn.aberto { outline: 2px solid var(--areia); }
   .btn.sec { background: var(--suave); color: var(--texto); border: 1px solid var(--borda); }
   .btn:disabled { opacity: .45; cursor: default; }
   .link { background: none; border: 0; color: var(--areia); font-weight: 600; padding: 8px 0; }
@@ -166,8 +173,23 @@
       <div class="rot" id="ola" style="margin-top:6px"></div>
     </div>
 
-    <form id="formCarga" class="cartao" autocomplete="off">
-      <h2>Lançar venda</h2>
+    <div class="acoes">
+      <button class="btn principal" id="btnAbrirVenda" type="button">＋ Lançar venda</button>
+      <div class="acoes2">
+        <button class="btn sec" id="btnAbrirCaixa" type="button">Caixa<small id="caixaMini">R$ 0,00</small></button>
+        <button class="btn sec" id="btnCadastrarVeiculo" type="button">Cadastrar<br>veículo</button>
+      </div>
+    </div>
+
+    <div class="cartao oculto" id="cartaoCaixa">
+      <div class="topo"><h2>Caixa de hoje</h2><b id="caixaTotal" class="ent" style="font-size:20px">R$ 0,00</b></div>
+      <div class="caixa" id="caixaFormas"></div>
+      <div class="sub" id="caixaNotas" style="margin-top:8px"></div>
+      <button class="link" type="button" data-fechar="cartaoCaixa">Fechar</button>
+    </div>
+
+    <form id="formCarga" class="cartao oculto" autocomplete="off">
+      <div class="topo"><h2 style="margin:0">Lançar venda</h2><button class="link" type="button" data-fechar="formCarga">Fechar</button></div>
       <label for="placa">Cliente ou placa</label>
       <input id="placa" type="text" maxlength="60" placeholder="Placa, cliente ou motorista" autocapitalize="characters" required style="font-weight:700">
       <datalist id="listaPlacas"></datalist>
@@ -204,12 +226,6 @@
       <button class="btn" id="btnSalvar" type="submit">Lançar venda</button>
       <div id="msgCarga"></div>
     </form>
-
-    <div class="cartao">
-      <div class="topo"><h2>Caixa de hoje</h2><b id="caixaTotal" class="ent" style="font-size:20px">R$ 0,00</b></div>
-      <div class="caixa" id="caixaFormas"></div>
-      <div class="sub" id="caixaNotas" style="margin-top:8px"></div>
-    </div>
 
     <div class="cartao">
       <div class="topo">
@@ -553,6 +569,7 @@ async function carregarHoje() {
   for (const x of (d.data || [])) { por[x.forma_pagamento] = (por[x.forma_pagamento] || 0) + Number(x.valor_pago); dep += Number(x.valor_pago); }
   const total = FORMAS_CAIXA.reduce((t, f) => t + por[f], 0);
   $("caixaTotal").textContent = moeda(total);
+  $("caixaMini").textContent = moeda(total);
   $("caixaFormas").innerHTML = FORMAS_CAIXA.map(f => `<div><span>${NOME_FORMA[f]}</span><b>${moeda(por[f])}</b></div>`).join("");
   $("caixaNotas").innerHTML = [
     dep > 0 ? `Inclui ${moeda(dep)} de depósitos em carteira.` : "",
@@ -560,6 +577,21 @@ async function carregarHoje() {
   ].filter(Boolean).join("<br>");
 }
 $("btnAtualizar").onclick = carregarBase;
+// Botões de ação: abre um painel por vez, logo abaixo dos botões
+function abrirPainel(id) {
+  const abrir = $(id).classList.contains("oculto");
+  ["formCarga", "cartaoCaixa"].forEach(x => $(x).classList.add("oculto"));
+  $("btnAbrirVenda").classList.remove("aberto"); $("btnAbrirCaixa").classList.remove("aberto");
+  if (!abrir) return;
+  $(id).classList.remove("oculto");
+  (id === "formCarga" ? $("btnAbrirVenda") : $("btnAbrirCaixa")).classList.add("aberto");
+  $(id).scrollIntoView({ behavior: "smooth", block: "start" });
+  if (id === "formCarga") { $("quando").value = agoraLocal(); setTimeout(() => $("placa").focus(), 250); }
+}
+$("btnAbrirVenda").onclick = () => abrirPainel("formCarga");
+$("btnAbrirCaixa").onclick = () => { abrirPainel("cartaoCaixa"); carregarHoje(); };
+$("btnCadastrarVeiculo").onclick = () => { $("buscaVeiculo").value = ""; abrirVeiculo(null); };
+$$("[data-fechar]").forEach(b => b.onclick = () => abrirPainel(b.dataset.fechar));
 $("placa").addEventListener("input", atualizarPlaca);
 $$("input[name=forma], input[name=complemento]").forEach(r => r.onchange = atualizarPagamento);
 function buscarVeiculos(t) {
