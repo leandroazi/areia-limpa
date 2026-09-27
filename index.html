@@ -89,6 +89,20 @@
   .radio label { flex: 1; margin: 0; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--borda);
     border-radius: 12px; font-size: 15px; color: var(--texto); font-weight: 600; cursor: pointer; }
   .radio input { width: 18px; height: 18px; }
+  .formas { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 6px; }
+  .formas label { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 4px; border: 1px solid var(--borda);
+    border-radius: 12px; font-size: 13px; font-weight: 700; color: var(--texto); background: var(--suave); cursor: pointer; text-align: center; }
+  .formas input { position: absolute; opacity: 0; pointer-events: none; }
+  .formas label:has(input:checked) { background: var(--carvao); color: var(--areiaviva); border-color: var(--carvao); }
+  .formas label:has(input:disabled) { opacity: .35; cursor: default; }
+  .formas small { font-weight: 500; font-size: 11px; }
+  .sugs { border: 1px solid var(--borda); border-radius: 12px; margin-top: 6px; overflow: hidden; }
+  .sugs button { display: flex; width: 100%; justify-content: space-between; gap: 8px; padding: 10px 12px; background: #fff; border: 0;
+    border-bottom: 1px solid var(--suave); text-align: left; font-size: 14px; }
+  .sugs button:last-child { border-bottom: 0; }
+  .caixa { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+  .caixa div { background: var(--suave); border-radius: 10px; padding: 8px 10px; font-size: 13px; display: flex; justify-content: space-between; }
+  .caixa b { font-weight: 700; }
 </style>
 </head>
 <body>
@@ -147,32 +161,55 @@
   <!-- ===================== CARGAS ===================== -->
   <section id="telaCargas" class="aba oculto">
     <div class="cartao destaque">
-      <div class="rot">Cargas lançadas hoje</div>
+      <div class="rot">Vendas lançadas hoje</div>
       <div><span class="num" id="totalHoje">0</span> <span class="rot">cargas</span></div>
       <div class="rot" id="ola" style="margin-top:6px"></div>
     </div>
 
     <form id="formCarga" class="cartao" autocomplete="off">
-      <h2>Lançar carga</h2>
-      <label for="placa">Placa da caçamba</label>
-      <input id="placa" class="placa" type="text" maxlength="8" placeholder="ABC1D23" list="listaPlacas" autocapitalize="characters" required>
+      <h2>Lançar venda</h2>
+      <label for="placa">Cliente ou placa</label>
+      <input id="placa" type="text" maxlength="60" placeholder="Placa, cliente ou motorista" autocapitalize="characters" required style="font-weight:700">
       <datalist id="listaPlacas"></datalist>
+      <div id="sugestoes" class="sugs oculto"></div>
       <div id="infoVeiculo"></div>
       <div id="frequentes">
         <label>Mais frequentes (toque para escolher)</label>
         <div class="chips" id="chips"></div>
       </div>
-      <div id="boxCredito" class="credito oculto">
-        <span>Descontar da carteira de créditos<br><small id="saldoCredito"></small></span>
-        <input id="usarCredito" type="checkbox" checked>
+      <label for="produto">Produto</label>
+      <select id="produto"><option value="areia" selected>Areia</option></select>
+      <label>Forma de pagamento</label>
+      <div class="formas" id="formas">
+        <label><input type="radio" name="forma" value="pix" checked>Pix</label>
+        <label><input type="radio" name="forma" value="dinheiro">Dinheiro</label>
+        <label><input type="radio" name="forma" value="credito">Cartão<small>crédito</small></label>
+        <label><input type="radio" name="forma" value="debito">Cartão<small>débito</small></label>
+        <label><input type="radio" name="forma" value="carteira" id="optCarteira">Carteira<small id="saldoCredito">sem saldo</small></label>
+      </div>
+      <div id="boxCredito" class="oculto"></div>
+      <div id="boxComplemento" class="oculto">
+        <label>Completar o restante com</label>
+        <div class="formas">
+          <label><input type="radio" name="complemento" value="pix" checked>Pix</label>
+          <label><input type="radio" name="complemento" value="dinheiro">Dinheiro</label>
+          <label><input type="radio" name="complemento" value="credito">Cartão<small>crédito</small></label>
+          <label><input type="radio" name="complemento" value="debito">Cartão<small>débito</small></label>
+        </div>
       </div>
       <label for="quando">Data e hora</label>
       <input id="quando" type="datetime-local" required>
       <label for="obs">Observação (opcional)</label>
       <input id="obs" type="text" maxlength="200">
-      <button class="btn" id="btnSalvar" type="submit">Lançar carga</button>
+      <button class="btn" id="btnSalvar" type="submit">Lançar venda</button>
       <div id="msgCarga"></div>
     </form>
+
+    <div class="cartao">
+      <div class="topo"><h2>Caixa de hoje</h2><b id="caixaTotal" class="ent" style="font-size:20px">R$ 0,00</b></div>
+      <div class="caixa" id="caixaFormas"></div>
+      <div class="sub" id="caixaNotas" style="margin-top:8px"></div>
+    </div>
 
     <div class="cartao">
       <div class="topo">
@@ -180,7 +217,7 @@
         <button class="link" id="btnAtualizar" type="button">Atualizar</button>
       </div>
       <table>
-        <thead><tr><th>Hora</th><th>Placa</th><th>Motorista</th><th></th></tr></thead>
+        <thead><tr><th>Hora</th><th>Placa</th><th>Cliente</th><th>Pagamento</th></tr></thead>
         <tbody id="tabelaHoje"></tbody>
       </table>
       <div id="vazioHoje" class="vazio">Nenhuma carga lançada hoje.</div>
@@ -208,32 +245,36 @@
   <!-- ===================== CARTEIRA ===================== -->
   <section id="telaCarteira" class="aba oculto">
     <div class="cartao">
-      <h2>Carteira de créditos</h2>
-      <div class="sub">Pagamentos adiantados (crédito) e cargas descontadas (débito).</div>
+      <h2>Carteira de clientes</h2>
+      <div class="sub">O cliente deixa um valor adiantado (depósito) e cada carga vai abatendo. O depósito entra no caixa do dia em que foi pago; as cargas pagas com a carteira não somam de novo.</div>
       <label for="placaCarteira">Placa</label>
       <input id="placaCarteira" class="placa" type="text" maxlength="8" placeholder="ABC1D23" list="listaPlacas" autocapitalize="characters">
       <div id="resumoCarteira"></div>
     </div>
     <form id="formCredito" class="cartao">
-      <h2>Registrar pagamento adiantado</h2>
+      <h2>Registrar depósito na carteira</h2>
       <div class="linha2">
-        <div><label for="qtdCredito">Quantidade de cargas</label><input id="qtdCredito" type="number" min="1" max="500" value="10" required></div>
         <div><label for="valorCredito">Valor recebido (R$)</label><input id="valorCredito" type="number" min="1" step="0.01" required></div>
-      </div>
-      <div class="linha2">
         <div><label for="dataCredito">Data</label><input id="dataCredito" type="date" required></div>
-        <div><label for="obsCredito">Observação</label><input id="obsCredito" type="text" maxlength="120" placeholder="Ex.: Pix, dinheiro"></div>
       </div>
-      <button class="btn" id="btnCredito" type="submit">Registrar crédito</button>
+      <label>Recebido em</label>
+      <div class="formas">
+        <label><input type="radio" name="formaDep" value="pix" checked>Pix</label>
+        <label><input type="radio" name="formaDep" value="dinheiro">Dinheiro</label>
+        <label><input type="radio" name="formaDep" value="credito">Cartão<small>crédito</small></label>
+        <label><input type="radio" name="formaDep" value="debito">Cartão<small>débito</small></label>
+      </div>
+      <label for="obsCredito">Observação</label><input id="obsCredito" type="text" maxlength="120">
+      <button class="btn" id="btnCredito" type="submit">Registrar depósito</button>
       <div id="msgCredito"></div>
     </form>
     <div class="cartao">
       <h2>Clientes com saldo</h2>
       <table>
-        <thead><tr><th>Placa</th><th>Motorista</th><th class="num">Saldo</th></tr></thead>
+        <thead><tr><th>Placa</th><th>Cliente</th><th class="num">Saldo</th></tr></thead>
         <tbody id="tabelaSaldos"></tbody>
       </table>
-      <div id="vazioSaldos" class="vazio oculto">Nenhum crédito registrado.</div>
+      <div id="vazioSaldos" class="vazio oculto">Nenhum depósito registrado.</div>
     </div>
   </section>
 
@@ -337,7 +378,7 @@ const $ = (id) => document.getElementById(id);
 const $$ = (sel) => document.querySelectorAll(sel);
 const TELAS = ["telaLogin", "telaNovaSenha", "telaPendente"];
 const ABAS = ["telaCargas", "telaVeiculos", "telaCarteira", "telaDespesas"];
-const TITULOS = { telaCargas: "Lançamento de Cargas", telaVeiculos: "Veículos", telaCarteira: "Carteira de Créditos", telaDespesas: "Despesas" };
+const TITULOS = { telaCargas: "Lançamento de Cargas", telaVeiculos: "Veículos", telaCarteira: "Carteira de Clientes", telaDespesas: "Despesas" };
 const msg = (el, t, tipo = "erro") => { $(el).innerHTML = t ? `<div class="msg ${tipo}">${t}</div>` : ""; };
 const normalizar = (p) => (p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 const placaValida = (p) => /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(p);
@@ -458,7 +499,7 @@ async function carregarBase() {
   veiculos = v.data || []; precos = p.data || [];
   acessos = Object.fromEntries((a.data || []).map(x => [x.placa, x]));
   saldos = Object.fromEntries((s.data || []).map(x => [x.placa, x]));
-  $("listaPlacas").innerHTML = veiculos.filter(x => x.tipo === "cacamba").map(x => `<option value="${esc(x.placa)}">${esc(x.motorista)}</option>`).join("");
+  $("listaPlacas").innerHTML = veiculos.filter(x => x.tipo === "cacamba").map(x => `<option value="${esc(x.placa)}">${esc([x.cliente, x.motorista].filter(Boolean).join(" · "))}</option>`).join("");
   montarFrequentes();
   renderVeiculos();
   renderSaldos();
@@ -468,58 +509,136 @@ const veiculoDe = (placa) => veiculos.find(x => x.placa === placa);
 function precoEm(d) { let v = 350; for (const p of precos) if (new Date(p.vigente_desde) <= d) v = Number(p.valor); return v; }
 const saldoDe = (placa) => Number(saldos[placa]?.saldo || 0);
 
-// ---------------- CARGAS ----------------
+// ---------------- CARGAS (vendas) ----------------
+const NOME_FORMA = { pix: "Pix", dinheiro: "Dinheiro", credito: "Crédito", debito: "Débito", carteira: "Carteira" };
+const FORMAS_CAIXA = ["pix", "dinheiro", "credito", "debito"];
+const nomeCliente = (v) => v ? (v.cliente || v.motorista || "—") : "—";
+const r2 = (v) => Math.round(v * 100) / 100;
+const formaSel = () => document.querySelector("input[name=forma]:checked").value;
+const complementoSel = () => document.querySelector("input[name=complemento]:checked").value;
+function descPagamento(r) {
+  const vc = Number(r.valor_carteira || 0);
+  if (vc > 0 || r.forma_pagamento === "carteira") {
+    return Number(r.valor) - vc > 0.009 ? `Carteira + ${NOME_FORMA[r.forma_complemento || "pix"]}` : "Carteira";
+  }
+  return NOME_FORMA[r.forma_pagamento] || "Pix";
+}
 function montarFrequentes() {
   const top = veiculos.filter(x => x.tipo === "cacamba" && x.situacao !== "bloqueado")
     .sort((a, b) => (acessos[b.placa]?.ultimos_30 || 0) - (acessos[a.placa]?.ultimos_30 || 0)).slice(0, 12);
-  $("chips").innerHTML = top.map(x => `<button type="button" class="chip" data-placa="${esc(x.placa)}"><b>${esc(x.placa)}</b><span>${esc((x.motorista || "").split(" ")[0])}</span></button>`).join("");
+  $("chips").innerHTML = top.map(x => `<button type="button" class="chip" data-placa="${esc(x.placa)}"><b>${esc(x.placa)}</b><span>${esc(x.cliente || (x.motorista || "").split(" ")[0])}</span></button>`).join("");
   $("frequentes").classList.toggle("oculto", top.length === 0);
-  $$(".chip").forEach(b => b.onclick = () => { $("placa").value = b.dataset.placa; atualizarPlaca(); });
+  $$(".chip").forEach(b => b.onclick = () => escolherPlaca(b.dataset.placa));
 }
+function escolherPlaca(p) { $("placa").value = p; atualizarPlaca(); }
 async function carregarHoje() {
   const ini = new Date(); ini.setHours(0, 0, 0, 0);
-  const { data, error } = await db.from("carregamentos").select("data,placa,usou_credito").gte("data", ini.toISOString()).order("data", { ascending: false });
-  if (error) return;
+  const [c, d] = await Promise.all([
+    db.from("carregamentos").select("data,placa,valor,forma_pagamento,forma_complemento,valor_carteira").gte("data", ini.toISOString()).order("data", { ascending: false }),
+    db.from("creditos_antecipados").select("valor_pago,forma_pagamento").eq("data", hojeISO()),
+  ]);
+  if (c.error) return;
+  const data = c.data || [];
   $("totalHoje").textContent = data.length;
   $("vazioHoje").classList.toggle("oculto", data.length > 0);
-  $("tabelaHoje").innerHTML = data.map(r => `<tr><td>${hora(r.data)}</td><td class="pl">${esc(r.placa)}</td><td>${esc(veiculoDe(r.placa)?.motorista || "—")}</td><td>${r.usou_credito ? '<span class="tag ouro">crédito</span>' : ""}</td></tr>`).join("");
+  $("tabelaHoje").innerHTML = data.map(r => { const vc = Number(r.valor_carteira || 0); return `<tr><td>${hora(r.data)}</td><td class="pl">${esc(r.placa)}</td><td>${esc(nomeCliente(veiculoDe(r.placa)))}</td><td>${vc > 0 ? `<span class="tag ouro">${descPagamento(r)}</span>` : `<span class="tag cin">${descPagamento(r)}</span>`}</td></tr>`; }).join("");
+  // Caixa do dia (regime de caixa)
+  const por = Object.fromEntries(FORMAS_CAIXA.map(f => [f, 0]));
+  let usado = 0, nCart = 0, dep = 0;
+  for (const r of data) {
+    const vc = Number(r.valor_carteira || 0), recebido = Number(r.valor) - vc;
+    if (vc > 0) { usado += vc; nCart++; }
+    if (recebido > 0.009) { const f = r.forma_pagamento === "carteira" ? (r.forma_complemento || "pix") : r.forma_pagamento; por[f] = (por[f] || 0) + recebido; }
+  }
+  for (const x of (d.data || [])) { por[x.forma_pagamento] = (por[x.forma_pagamento] || 0) + Number(x.valor_pago); dep += Number(x.valor_pago); }
+  const total = FORMAS_CAIXA.reduce((t, f) => t + por[f], 0);
+  $("caixaTotal").textContent = moeda(total);
+  $("caixaFormas").innerHTML = FORMAS_CAIXA.map(f => `<div><span>${NOME_FORMA[f]}</span><b>${moeda(por[f])}</b></div>`).join("");
+  $("caixaNotas").innerHTML = [
+    dep > 0 ? `Inclui ${moeda(dep)} de depósitos em carteira.` : "",
+    usado > 0 ? `Pago com carteira: <b class="sai">− ${moeda(usado)}</b> (${nCart} carga${nCart > 1 ? "s" : ""}). Não soma: o dinheiro entrou no dia do depósito.` : "",
+  ].filter(Boolean).join("<br>");
 }
 $("btnAtualizar").onclick = carregarBase;
 $("placa").addEventListener("input", atualizarPlaca);
+$$("input[name=forma], input[name=complemento]").forEach(r => r.onchange = atualizarPagamento);
+function buscarVeiculos(t) {
+  const q = t.trim().toLowerCase(), qp = normalizar(t);
+  if (!q) return [];
+  return veiculos.filter(v => v.tipo === "cacamba" && ((qp && v.placa.includes(qp)) || (v.motorista || "").toLowerCase().includes(q) || (v.cliente || "").toLowerCase().includes(q))).slice(0, 8);
+}
 function atualizarPlaca() {
-  const p = normalizar($("placa").value);
+  const texto = $("placa").value;
+  const p = normalizar(texto);
   const v = veiculoDe(p);
+  // Sugestões por placa, cliente ou motorista
+  const sugs = v ? [] : buscarVeiculos(texto);
+  $("sugestoes").innerHTML = sugs.map(x => `<button type="button" data-placa="${esc(x.placa)}"><span><b class="pl">${esc(x.placa)}</b> ${esc(x.cliente || "")}</span><span class="sub">${esc(x.motorista || "")}${x.situacao === "bloqueado" ? " ⛔" : ""}</span></button>`).join("");
+  $("sugestoes").classList.toggle("oculto", sugs.length === 0);
+  $$("#sugestoes button").forEach(b => b.onclick = () => escolherPlaca(b.dataset.placa));
   let html = "";
   if (v?.situacao === "bloqueado") html = `<div class="info bloq">⛔ VEÍCULO PROIBIDO${v.motivo_bloqueio ? " · " + esc(v.motivo_bloqueio) : ""}. Não é possível lançar carga.</div>`;
   else if (v?.tipo === "ignorado") html = `<div class="info alerta">⚠ Esta placa está cadastrada como "outro veículo" (não caçamba).</div>`;
-  else if (v) html = `<div class="info ok">✔ ${esc(v.motorista || "Sem motorista")} · ${esc(v.modelo)} ${esc(v.cor)}</div>`;
-  else if (p.length >= 7) html = `<div class="info alerta">⚠ Placa não cadastrada. Cadastre em Veículos ou lance assim mesmo.</div>`;
+  else if (v) html = `<div class="info ok">✔ <b>${esc(nomeCliente(v))}</b>${v.cliente && v.motorista ? " · " + esc(v.motorista) : ""} · ${esc(v.modelo)} ${esc(v.cor)}</div>`;
+  else if (p.length >= 7 && placaValida(p) && !sugs.length) html = `<div class="info alerta">⚠ Placa não cadastrada. Cadastre em Veículos ou lance assim mesmo.</div>`;
   $("infoVeiculo").innerHTML = html;
-  const s = p.length >= 7 ? saldoDe(p) : 0;
-  $("boxCredito").classList.toggle("oculto", s <= 0);
-  $("saldoCredito").textContent = s > 0 ? `Saldo: ${s} carga(s)` : "";
-  $("frequentes").classList.toggle("oculto", p.length > 0 || !$("chips").children.length);
+  const s = v || placaValida(p) ? saldoDe(p) : 0;
+  $("optCarteira").disabled = s <= 0.009;
+  $("saldoCredito").textContent = s > 0.009 ? moeda(s) : "sem saldo";
+  // Nova placa: volta ao padrão (Pix)
+  if ($("placa").dataset.ultima !== p) { $("placa").dataset.ultima = p; document.querySelector("input[name=forma][value=pix]").checked = true; document.querySelector("input[name=complemento][value=pix]").checked = true; }
+  $("frequentes").classList.toggle("oculto", texto.length > 0 || !$("chips").children.length);
   $("btnSalvar").disabled = v?.situacao === "bloqueado";
+  atualizarPagamento();
 }
+/** Calcula quanto sai da carteira e quanto entra no caixa. */
+function calcularPagamento() {
+  const placa = normalizar($("placa").value);
+  const quando = new Date($("quando").value || Date.now());
+  const valor = precoEm(quando), forma = formaSel();
+  if (forma !== "carteira") return { valor, forma, valor_carteira: 0, forma_complemento: null, falta: 0 };
+  const saldo = saldoDe(placa), doSaldo = r2(Math.min(Math.max(saldo, 0), valor)), falta = r2(valor - doSaldo);
+  return { valor, forma, saldo, valor_carteira: doSaldo, forma_complemento: falta > 0.009 ? complementoSel() : null, falta };
+}
+function atualizarPagamento() {
+  const pg = calcularPagamento();
+  const box = $("boxCredito");
+  if (pg.forma !== "carteira") { box.classList.add("oculto"); $("boxComplemento").classList.add("oculto"); return; }
+  box.classList.remove("oculto");
+  if (pg.falta <= 0.009) {
+    box.innerHTML = `<div class="msg ok">Paga com a carteira (saldo ${moeda(pg.saldo)} → ${moeda(pg.saldo - pg.valor)}). Não entra no caixa de hoje: o dinheiro entrou no dia do depósito.</div>`;
+    $("boxComplemento").classList.add("oculto");
+  } else {
+    box.innerHTML = `<div class="msg aviso"><b>Saldo insuficiente.</b> A carteira cobre ${moeda(pg.valor_carteira)}. Receber <b>${moeda(pg.falta)}</b> em outra forma — só esse valor entra no caixa de hoje.</div>`;
+    $("boxComplemento").classList.remove("oculto");
+  }
+}
+$("quando").addEventListener("change", atualizarPagamento);
 $("formCarga").onsubmit = async (ev) => {
   ev.preventDefault();
-  const placa = normalizar($("placa").value);
-  if (!placaValida(placa)) return msg("msgCarga", "Placa inválida. Use o formato ABC1D23 ou ABC1234.");
+  let placa = normalizar($("placa").value);
+  if (!placaValida(placa)) {
+    const s = buscarVeiculos($("placa").value);
+    if (s.length === 1) { escolherPlaca(s[0].placa); placa = s[0].placa; }
+    else return msg("msgCarga", "Escolha o cliente/placa na lista ou digite uma placa válida (ABC1D23 ou ABC1234).");
+  }
   if (veiculoDe(placa)?.situacao === "bloqueado") return msg("msgCarga", "Veículo proibido. Carga não lançada.");
   const quando = new Date($("quando").value);
   if (isNaN(quando) || quando > new Date(Date.now() + 5 * 6e4)) return msg("msgCarga", "Data/hora inválida.");
-  const usaCredito = !$("boxCredito").classList.contains("oculto") && $("usarCredito").checked;
-  const pc = saldos[placa] && Number(saldos[placa].compradas) ? Number(saldos[placa].pago) / Number(saldos[placa].compradas) : null;
-  const valor = usaCredito && pc ? Math.round(pc * 100) / 100 : precoEm(quando);
+  const pg = calcularPagamento();
+  if (pg.forma === "carteira" && pg.valor_carteira <= 0) return msg("msgCarga", "Este cliente não tem saldo na carteira. Escolha outra forma de pagamento.");
   $("btnSalvar").disabled = true; msg("msgCarga", "");
   try {
     const de = new Date(quando - 10 * 6e4).toISOString(), ate = new Date(+quando + 10 * 6e4).toISOString();
     const { data: dup } = await db.from("carregamentos").select("id").eq("placa", placa).gte("data", de).lte("data", ate).limit(1);
     if (dup?.length && !confirm(`Já existe uma carga de ${placa} perto desse horário. Lançar mesmo assim?`)) return;
-    const { error } = await db.from("carregamentos").insert({ data: quando.toISOString(), placa, valor, usou_credito: usaCredito, observacao: ($("obs").value.trim() + " [web]").trim() });
+    const { error } = await db.from("carregamentos").insert({
+      data: quando.toISOString(), placa, valor: pg.valor, produto: $("produto").value,
+      forma_pagamento: pg.forma, valor_carteira: pg.valor_carteira, forma_complemento: pg.forma_complemento,
+      usou_credito: pg.valor_carteira > 0, observacao: ($("obs").value.trim() + " [web]").trim() });
     if (error) throw error;
-    msg("msgCarga", `Carga de ${placa} lançada às ${hora(quando)}.`, "ok");
-    $("placa").value = ""; $("obs").value = ""; $("quando").value = agoraLocal(); $("usarCredito").checked = true;
+    msg("msgCarga", `Venda de ${placa} lançada às ${hora(quando)} · ${descPagamento({ valor: pg.valor, valor_carteira: pg.valor_carteira, forma_pagamento: pg.forma, forma_complemento: pg.forma_complemento })}.`, "ok");
+    $("placa").value = ""; $("obs").value = ""; $("quando").value = agoraLocal();
     await carregarBase(); atualizarPlaca(); $("placa").focus();
   } catch (e) { msg("msgCarga", traduzir(e)); }
   finally { $("btnSalvar").disabled = false; }
@@ -544,7 +663,7 @@ function renderVeiculos() {
       <div><span class="pl">${esc(v.placa)}</span>
         ${v.situacao === "bloqueado" ? '<span class="tag bloq">Proibido</span>' : '<span class="tag ok">Permitido</span>'}
         ${v.tipo === "ignorado" ? '<span class="tag cin">Outro</span>' : ""}
-        ${s > 0 ? `<span class="tag ouro">Crédito: ${s}</span>` : ""}
+        ${s > 0.009 ? `<span class="tag ouro">Carteira: ${moeda(s)}</span>` : ""}
         <div class="d">${esc([v.motorista, v.modelo, v.cor].filter(Boolean).join(" · ") || "—")}</div>
         ${v.cliente ? `<div class="d">${esc(v.cliente)}</div>` : ""}</div>
       <div class="r"><b>${a.total || 0}</b>acessos<br>${a.ultimos_30 || 0} em 30 dias</div></div>`;
@@ -570,7 +689,7 @@ function abrirVeiculo(v) {
     const a = acessos[v.placa] || {}, s = saldos[v.placa];
     $("fichaResumo").innerHTML = `<div class="linha2" style="margin-bottom:6px">
       <div class="cartao" style="margin:0;background:var(--suave)"><div class="sub">Acessos (total)</div><div style="font-size:24px;font-weight:800">${a.total || 0}</div><div class="sub">${a.ultimos_30 || 0} nos últimos 30 dias${a.ultima_carga ? "<br>Última: " + dataBR(a.ultima_carga) : ""}</div></div>
-      <div class="cartao" style="margin:0;background:var(--suave)"><div class="sub">Carteira de créditos</div><div style="font-size:24px;font-weight:800">${s ? s.saldo : 0}</div><div class="sub">cargas de saldo${s ? `<br>${s.compradas} compradas · ${s.usadas} usadas` : ""}</div></div></div>`;
+      <div class="cartao" style="margin:0;background:var(--suave)"><div class="sub">Carteira</div><div style="font-size:24px;font-weight:800">${moeda(s ? s.saldo : 0)}</div><div class="sub">de saldo${s ? `<br>${moeda(s.depositado)} depositados · ${moeda(s.usado)} usados` : ""}</div></div></div>`;
   } else $("fichaResumo").innerHTML = "";
   msg("msgVeiculo", "");
   $("dlgVeiculo").showModal();
@@ -600,58 +719,53 @@ $("formVeiculo").onsubmit = async (ev) => {
 
 // ---------------- CARTEIRA ----------------
 $("placaCarteira").addEventListener("input", mostrarCarteira);
-$("qtdCredito").addEventListener("input", sugerirValor);
-function sugerirValor() {
-  const q = Number($("qtdCredito").value) || 0;
-  $("valorCredito").value = q ? (q * precoEm(new Date())).toFixed(2) : "";
-}
 async function carregarSaldos() {
   const { data } = await db.rpc("saldo_creditos");
   saldos = Object.fromEntries((data || []).map(x => [x.placa, x]));
   renderSaldos();
   mostrarCarteira();
-  if (!$("valorCredito").value) sugerirValor();
 }
 function renderSaldos() {
-  const lista = Object.values(saldos).sort((a, b) => b.saldo - a.saldo);
+  const lista = Object.values(saldos).sort((a, b) => Number(b.saldo) - Number(a.saldo));
   $("vazioSaldos").classList.toggle("oculto", lista.length > 0);
-  $("tabelaSaldos").innerHTML = lista.map(s => `<tr data-placa="${esc(s.placa)}" style="cursor:pointer"><td class="pl">${esc(s.placa)}</td><td>${esc(veiculoDe(s.placa)?.motorista || "—")}</td><td class="num"><b class="${s.saldo > 0 ? "ent" : s.saldo < 0 ? "sai" : ""}">${s.saldo}</b> cargas</td></tr>`).join("");
+  $("tabelaSaldos").innerHTML = lista.map(s => { const v = Number(s.saldo); return `<tr data-placa="${esc(s.placa)}" style="cursor:pointer"><td class="pl">${esc(s.placa)}</td><td>${esc(nomeCliente(veiculoDe(s.placa)))}</td><td class="num"><b class="${v > 0.009 ? "ent" : v < -0.009 ? "sai" : ""}">${moeda(v)}</b></td></tr>`; }).join("");
   $$("#tabelaSaldos tr").forEach(tr => tr.onclick = () => { $("placaCarteira").value = tr.dataset.placa; mostrarCarteira(); window.scrollTo(0, 0); });
 }
 async function mostrarCarteira() {
   const placa = normalizar($("placaCarteira").value);
   if (placa.length < 7) { $("resumoCarteira").innerHTML = ""; return; }
-  const v = veiculoDe(placa), s = saldos[placa];
+  const v = veiculoDe(placa), saldo = saldoDe(placa);
   const [cr, db2] = await Promise.all([
-    db.from("creditos_antecipados").select("data,valor_pago,quantidade_cargas,observacao").eq("placa", placa).order("data", { ascending: false }).limit(50),
-    db.from("carregamentos").select("data").eq("placa", placa).eq("usou_credito", true).order("data", { ascending: false }).limit(50),
+    db.from("creditos_antecipados").select("data,valor_pago,forma_pagamento,observacao").eq("placa", placa).order("data", { ascending: false }).limit(50),
+    db.from("carregamentos").select("data,valor,valor_carteira,forma_pagamento,forma_complemento").eq("placa", placa).gt("valor_carteira", 0).order("data", { ascending: false }).limit(50),
   ]);
   const mov = [
-    ...(cr.data || []).map(c => ({ d: c.data, t: `Crédito: ${c.quantidade_cargas} cargas · ${moeda(c.valor_pago)}${c.observacao ? " · " + esc(c.observacao) : ""}`, q: +c.quantidade_cargas })),
-    ...(db2.data || []).map(c => ({ d: c.data, t: `Débito: carga retirada às ${hora(c.data)}`, q: -1 })),
+    ...(cr.data || []).map(c => ({ d: c.data, t: `Depósito · ${NOME_FORMA[c.forma_pagamento] || "Pix"}${c.observacao ? " · " + esc(c.observacao) : ""}`, q: +c.valor_pago })),
+    ...(db2.data || []).map(c => { const resto = Number(c.valor) - Number(c.valor_carteira); return { d: c.data, t: `Carga às ${hora(c.data)}${resto > 0.009 ? ` (+ ${moeda(resto)} em ${NOME_FORMA[c.forma_complemento || "pix"]})` : ""}`, q: -Number(c.valor_carteira) }; }),
   ].sort((a, b) => (a.d < b.d ? 1 : -1));
   $("resumoCarteira").innerHTML = `
-    <div class="topo" style="margin-top:12px"><div><div class="sub">${esc(v?.motorista || "Placa não cadastrada")}</div>
-      <div class="saldo ${s?.saldo > 0 ? "ent" : ""}">${s ? s.saldo : 0} <span style="font-size:15px;font-weight:600">cargas de saldo</span></div></div></div>
-    <table><thead><tr><th>Data</th><th>Movimento</th><th class="num">Cargas</th></tr></thead><tbody>
-    ${mov.map(m => `<tr><td>${dataBR(m.d)}</td><td>${m.t}</td><td class="num ${m.q > 0 ? "ent" : "sai"}">${m.q > 0 ? "+" + m.q : m.q}</td></tr>`).join("") || '<tr><td colspan="3" class="vazio">Sem movimentos.</td></tr>'}
+    <div class="topo" style="margin-top:12px"><div><div class="sub">${esc(v ? nomeCliente(v) : "Placa não cadastrada")}</div>
+      <div class="saldo ${saldo > 0.009 ? "ent" : saldo < -0.009 ? "sai" : ""}">${moeda(saldo)} <span style="font-size:15px;font-weight:600">de saldo</span></div></div></div>
+    <table><thead><tr><th>Data</th><th>Movimento</th><th class="num">Valor</th></tr></thead><tbody>
+    ${mov.map(m => `<tr><td>${dataBR(m.d)}</td><td>${m.t}</td><td class="num ${m.q > 0 ? "ent" : "sai"}">${m.q > 0 ? "+ " : "− "}${moeda(Math.abs(m.q))}</td></tr>`).join("") || '<tr><td colspan="3" class="vazio">Sem movimentos.</td></tr>'}
     </tbody></table>`;
 }
 $("formCredito").onsubmit = async (ev) => {
   ev.preventDefault();
   const placa = normalizar($("placaCarteira").value);
   if (!placaValida(placa)) return msg("msgCredito", "Informe a placa no campo acima.");
-  if (veiculoDe(placa)?.situacao === "bloqueado" && !confirm("Este veículo está PROIBIDO. Registrar crédito mesmo assim?")) return;
-  const qtd = parseInt($("qtdCredito").value, 10), valor = Number($("valorCredito").value);
-  if (!(qtd > 0) || !(valor > 0)) return msg("msgCredito", "Informe quantidade e valor.");
-  if (!confirm(`Confirmar crédito de ${qtd} cargas para ${placa}, valor ${moeda(valor)}?`)) return;
+  if (veiculoDe(placa)?.situacao === "bloqueado" && !confirm("Este veículo está PROIBIDO. Registrar depósito mesmo assim?")) return;
+  const valor = Number($("valorCredito").value);
+  const forma = document.querySelector("input[name=formaDep]:checked").value;
+  if (!(valor > 0)) return msg("msgCredito", "Informe o valor recebido.");
+  if (!confirm(`Confirmar depósito de ${moeda(valor)} (${NOME_FORMA[forma]}) na carteira de ${placa}?`)) return;
   $("btnCredito").disabled = true;
   try {
-    const { error } = await db.from("creditos_antecipados").insert({ placa, data: $("dataCredito").value, valor_pago: valor, quantidade_cargas: qtd, observacao: $("obsCredito").value.trim() });
+    const { error } = await db.from("creditos_antecipados").insert({ placa, data: $("dataCredito").value, valor_pago: valor, quantidade_cargas: 0, forma_pagamento: forma, observacao: $("obsCredito").value.trim() });
     if (error) throw error;
-    msg("msgCredito", `Crédito de ${qtd} cargas registrado para ${placa}.`, "ok");
-    $("obsCredito").value = "";
-    await carregarSaldos();
+    msg("msgCredito", `Depósito de ${moeda(valor)} registrado para ${placa}. Entra no caixa do dia ${dataBR($("dataCredito").value)}.`, "ok");
+    $("obsCredito").value = ""; $("valorCredito").value = "";
+    await carregarSaldos(); carregarHoje();
   } catch (e) { msg("msgCredito", traduzir(e)); }
   finally { $("btnCredito").disabled = false; }
 };
