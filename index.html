@@ -38,6 +38,32 @@
   .linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   button { font: inherit; cursor: pointer; }
   .btn { width: 100%; padding: 14px; border: 0; border-radius: 14px; background: var(--carvao); color: var(--areiaviva); font-weight: 700; font-size: 16px; margin-top: 16px; }
+  /* Painel (dashboard) à direita em telas largas */
+  .app.logado { max-width: 1240px; }
+  .cols { display: block; }
+  #colEsq { max-width: 640px; }
+  @media (min-width: 1000px) {
+    .app.logado .cols { display: grid; grid-template-columns: minmax(420px, 560px) 1fr; gap: 24px; align-items: start; }
+    .app.logado #dash { position: sticky; top: 12px; }
+    .app.logado header { max-width: none; }
+    nav.barra .in { max-width: 1240px; }
+  }
+  @media (max-width: 999px) { #dash.so-largo { display: none; } }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .kpi { background: var(--cartao); border-radius: 14px; padding: 12px 14px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+  .kpi .r { font-size: 12px; color: var(--sec); }
+  .kpi .v { font-size: 24px; font-weight: 800; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi .s { font-size: 11px; color: var(--sec); }
+  .kpi.escuro { background: var(--carvao); color: #fff; } .kpi.escuro .r, .kpi.escuro .s { color: rgba(255,255,255,.75); } .kpi.escuro .v { color: var(--areiaviva); }
+  .grafico svg { width: 100%; height: auto; display: block; }
+  .grafico text { font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; fill: var(--sec); }
+  .grafico text.val { fill: var(--texto); font-weight: 700; }
+  .barras .l { display: grid; grid-template-columns: 110px 1fr 90px; gap: 8px; align-items: center; font-size: 13px; margin: 6px 0; }
+  .barras .t { background: var(--suave); border-radius: 6px; height: 12px; overflow: hidden; }
+  .barras .t i { display: block; height: 100%; background: var(--areia); border-radius: 6px; }
+  .barras .n { text-align: right; font-weight: 700; white-space: nowrap; }
+  .dashTopo { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 2px 10px; }
+  .dashTopo h2 { font-size: 20px; }
   .acoes { margin: -4px 0 16px; }
   .acoes .btn { margin-top: 0; }
   .acoes .principal { font-size: 18px; padding: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -124,6 +150,8 @@
       <div class="sub">Mineração Areia Limpa · Extração responsável, futuro sustentável.</div>
     </div>
   </header>
+  <div class="cols">
+  <main id="colEsq">
 
   <!-- ===================== LOGIN ===================== -->
   <section id="telaLogin" class="cartao oculto">
@@ -328,6 +356,30 @@
   <div id="rodape" class="oculto" style="text-align:center">
     <button class="link" data-sair type="button">Sair</button>
   </div>
+  </main>
+
+  <!-- ===================== PAINEL (dashboard) ===================== -->
+  <aside id="dash" class="oculto">
+    <div class="dashTopo"><h2>Painel de vendas</h2><span class="sub" id="dashAtualizado"></span></div>
+    <div class="kpis" id="dashKpis"></div>
+    <div class="cartao grafico">
+      <div class="topo"><h2>Cargas por dia</h2><span class="sub">últimos 14 dias</span></div>
+      <div id="dashCargas"></div>
+    </div>
+    <div class="cartao grafico">
+      <div class="topo"><h2>Caixa por dia</h2><span class="sub">vendas no ato + depósitos em carteira</span></div>
+      <div id="dashCaixa"></div>
+    </div>
+    <div class="cartao barras">
+      <div class="topo"><h2>Formas de pagamento</h2><span class="sub">últimos 30 dias</span></div>
+      <div id="dashFormas"></div>
+    </div>
+    <div class="cartao barras">
+      <div class="topo"><h2>Clientes que mais carregaram</h2><span class="sub">últimos 30 dias</span></div>
+      <div id="dashClientes"></div>
+    </div>
+  </aside>
+  </div>
   <footer>Conexão segura · Servidor em São Paulo</footer>
 </div>
 
@@ -428,6 +480,9 @@ function mostrarTela(t) {
   const logado = ABAS.includes(t);
   $("barra").classList.toggle("oculto", !logado);
   $("rodape").classList.toggle("oculto", !logado);
+  document.querySelector(".app").classList.toggle("logado", logado);
+  $("dash").classList.toggle("oculto", !logado);
+  $("dash").classList.toggle("so-largo", t !== "telaCargas");
   $$("nav.barra button").forEach(b => b.classList.toggle("ativa", b.dataset.aba === t));
   $("titulo").textContent = TITULOS[t] || "Areia Limpa";
   if (logado) window.scrollTo(0, 0);
@@ -520,6 +575,7 @@ async function carregarBase() {
   renderVeiculos();
   renderSaldos();
   await carregarHoje();
+  carregarDash();
 }
 const veiculoDe = (placa) => veiculos.find(x => x.placa === placa);
 function precoEm(d) { let v = 350; for (const p of precos) if (new Date(p.vigente_desde) <= d) v = Number(p.valor); return v; }
@@ -834,6 +890,78 @@ $("formDespesa").onsubmit = async (ev) => {
 };
 
 setInterval(() => { if (perfil && perfil.papel !== "pendente" && !$("telaCargas").classList.contains("oculto")) carregarHoje(); }, 60000);
+setInterval(() => { if (perfil && perfil.papel !== "pendente") carregarDash(); }, 300000);
+
+// ---------------- PAINEL (dashboard) ----------------
+const diaLocal = (d) => { const x = new Date(d); return new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+async function buscarTudo(consulta) {
+  const lista = [];
+  for (let de = 0; de < 20000; de += 1000) {
+    const { data, error } = await consulta().range(de, de + 999);
+    if (error) throw error;
+    lista.push(...data);
+    if (data.length < 1000) break;
+  }
+  return lista;
+}
+async function carregarDash() {
+  try {
+    const ini = new Date(); ini.setHours(0, 0, 0, 0); ini.setDate(ini.getDate() - 29);
+    const [cargas, deps] = await Promise.all([
+      buscarTudo(() => db.from("carregamentos").select("data,placa,valor,forma_pagamento,forma_complemento,valor_carteira").gte("data", ini.toISOString()).order("data")),
+      buscarTudo(() => db.from("creditos_antecipados").select("data,valor_pago,forma_pagamento").gte("data", diaLocal(ini)).order("data")),
+    ]);
+    // dias
+    const dias = [];
+    for (let i = 0; i < 30; i++) { const d = new Date(ini); d.setDate(d.getDate() + i); dias.push(diaLocal(d)); }
+    const porDia = Object.fromEntries(dias.map(d => [d, { cargas: 0, caixa: 0 }]));
+    const formas = Object.fromEntries(FORMAS_CAIXA.concat("carteira").map(f => [f, 0]));
+    const clientes = {};
+    for (const r of cargas) {
+      const d = diaLocal(r.data); if (!porDia[d]) continue;
+      const vc = Number(r.valor_carteira || 0), rec = Number(r.valor) - vc;
+      porDia[d].cargas++; porDia[d].caixa += rec;
+      if (vc > 0) formas.carteira += vc;
+      if (rec > 0.009) { const f = r.forma_pagamento === "carteira" ? (r.forma_complemento || "pix") : r.forma_pagamento; formas[f] = (formas[f] || 0) + rec; }
+      const nome = nomeCliente(veiculoDe(r.placa)); const k = nome === "—" ? r.placa : nome;
+      clientes[k] = (clientes[k] || 0) + 1;
+    }
+    for (const x of deps) { if (porDia[x.data]) porDia[x.data].caixa += Number(x.valor_pago); formas[x.forma_pagamento] = (formas[x.forma_pagamento] || 0) + Number(x.valor_pago); }
+    const hoje = dias[29], ult7 = dias.slice(23), ant7 = dias.slice(16, 23);
+    const soma = (ds, k) => ds.reduce((t, d) => t + porDia[d][k], 0);
+    const util = (ds) => ds.filter(d => new Date(d + "T12:00").getDay() !== 0).length || 1;
+    const media7 = soma(ult7, "cargas") / util(ult7), mediaAnt = soma(ant7, "cargas") / util(ant7);
+    const varMedia = mediaAnt ? (media7 - mediaAnt) / mediaAnt : null;
+    const cargas30 = soma(dias, "cargas");
+    $("dashKpis").innerHTML = [
+      ["escuro", "Cargas hoje", porDia[hoje].cargas, "até agora"],
+      ["", "Caixa hoje", moeda(porDia[hoje].caixa), "vendas + depósitos"],
+      ["", "Média 7 dias", media7.toFixed(0).replace(".", ","), varMedia === null ? "cargas/dia útil" : `cargas/dia · ${varMedia >= 0 ? "▲" : "▼"} ${Math.abs(varMedia * 100).toFixed(0)}% vs. semana anterior`],
+      ["", "Cargas em 30 dias", cargas30, `caixa ${moeda(soma(dias, "caixa"))}`],
+    ].map(([c, r, v, s]) => `<div class="kpi ${c}"><div class="r">${r}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+    $("dashCargas").innerHTML = graficoBarras(dias.slice(16).map(d => ({ d, v: porDia[d].cargas })), v => String(v));
+    $("dashCaixa").innerHTML = graficoBarras(dias.slice(16).map(d => ({ d, v: porDia[d].caixa })), v => v >= 1000 ? (v / 1000).toFixed(1).replace(".", ",") + " mil" : String(Math.round(v)));
+    const totF = Object.values(formas).reduce((a, b) => a + b, 0) || 1;
+    $("dashFormas").innerHTML = Object.entries(formas).sort((a, b) => b[1] - a[1]).map(([f, v]) =>
+      `<div class="l"><span>${NOME_FORMA[f]}${f === "carteira" ? " <small class='sub'>(abatido)</small>" : ""}</span><span class="t"><i style="width:${(v / totF * 100).toFixed(1)}%;${f === "carteira" ? "background:var(--sec)" : ""}"></i></span><span class="n">${moeda(v)}</span></div>`).join("");
+    const top = Object.entries(clientes).sort((a, b) => b[1] - a[1]).slice(0, 6), maxC = top[0]?.[1] || 1;
+    $("dashClientes").innerHTML = top.map(([n, c]) => `<div class="l"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n)}</span><span class="t"><i style="width:${(c / maxC * 100).toFixed(1)}%"></i></span><span class="n">${c} cargas</span></div>`).join("") || '<div class="vazio">Sem cargas no período.</div>';
+    $("dashAtualizado").textContent = "atualizado às " + hora(new Date());
+  } catch (e) { $("dashAtualizado").textContent = "não foi possível carregar o painel"; }
+}
+function graficoBarras(pontos, rotulo) {
+  const W = 640, H = 200, base = 170, topo = 22, n = pontos.length, larg = W / n;
+  const max = Math.max(1, ...pontos.map(p => p.v));
+  const barras = pontos.map((p, i) => {
+    const h = (p.v / max) * (base - topo), x = i * larg + larg * 0.18, w = larg * 0.64;
+    const dt = new Date(p.d + "T12:00"), dom = dt.getDay() === 0, hoje = i === n - 1;
+    const cor = hoje ? "var(--areia)" : dom ? "var(--borda)" : "var(--carvao)";
+    return `<rect x="${x.toFixed(1)}" y="${(base - h).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(h, p.v ? 2 : 0).toFixed(1)}" rx="4" fill="${cor}"><title>${p.d.split("-").reverse().join("/")}: ${rotulo(p.v)}</title></rect>`
+      + (p.v ? `<text class="val" x="${(x + w / 2).toFixed(1)}" y="${(base - h - 5).toFixed(1)}" text-anchor="middle">${rotulo(p.v)}</text>` : "")
+      + `<text x="${(x + w / 2).toFixed(1)}" y="${base + 16}" text-anchor="middle">${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img"><line x1="0" x2="${W}" y1="${base}" y2="${base}" stroke="var(--borda)"/>${barras}</svg>`;
+}
 </script>
 </body>
 </html>
