@@ -64,6 +64,20 @@
   .barras .n { text-align: right; font-weight: 700; white-space: nowrap; }
   .dashTopo { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 2px 10px; }
   .dashTopo h2 { font-size: 20px; }
+  .perms { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 6px; }
+  .perms label { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 500; color: var(--texto); }
+  .perms input { width: 18px; height: 18px; }
+  .perms .t { grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--sec); margin-top: 6px; text-transform: uppercase; letter-spacing: .03em; }
+  .alt { border-left: 3px solid var(--amarelo); background: #FFF8E6; border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: 13px; }
+  .alt b { display: block; }
+  .acaoLinha { background: none; border: 0; color: var(--areia); font-weight: 700; font-size: 13px; padding: 0; cursor: pointer; }
+  textarea { width: 100%; min-height: 70px; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 12px; font: inherit; }
+  @media print {
+    body * { visibility: hidden; }
+    #cartaoCaixa, #cartaoCaixa * { visibility: visible; }
+    #cartaoCaixa { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; }
+    #cartaoCaixa .naoImprimir { display: none !important; }
+  }
   .acoes { margin: -4px 0 16px; }
   .acoes .btn { margin-top: 0; }
   .acoes .principal { font-size: 18px; padding: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -204,10 +218,21 @@
     </div>
 
     <div class="cartao oculto" id="cartaoCaixa">
-      <div class="topo"><h2>Caixa de hoje</h2><b id="caixaTotal" class="ent" style="font-size:20px">R$ 0,00</b></div>
+      <div class="topo"><h2 id="caixaTitulo">Caixa de hoje</h2><b id="caixaTotal" class="ent" style="font-size:20px">R$ 0,00</b></div>
+      <div class="linha2 naoImprimir" style="align-items:end">
+        <div><label for="caixaDia">Dia do caixa</label><input id="caixaDia" type="date"></div>
+        <div><button class="btn sec" id="btnImprimirCaixa" type="button" style="margin-top:0">Imprimir relatório</button></div>
+      </div>
       <div class="caixa" id="caixaFormas"></div>
       <div class="sub" id="caixaNotas" style="margin-top:8px"></div>
-      <button class="link" type="button" data-fechar="cartaoCaixa">Fechar</button>
+      <div id="caixaAlteracoes"></div>
+      <h2 style="margin-top:14px">Vendas do dia</h2>
+      <table>
+        <thead><tr><th>Hora</th><th>Placa</th><th>Cliente</th><th>Pagamento</th><th class="num">Entrou</th><th class="naoImprimir"></th></tr></thead>
+        <tbody id="caixaVendas"></tbody>
+      </table>
+      <div id="caixaDepositos"></div>
+      <button class="link naoImprimir" type="button" data-fechar="cartaoCaixa">Fechar</button>
     </div>
 
     <form id="formCarga" class="cartao oculto" autocomplete="off">
@@ -255,7 +280,7 @@
         <button class="link" id="btnAtualizar" type="button">Atualizar</button>
       </div>
       <table>
-        <thead><tr><th>Hora</th><th>Placa</th><th>Cliente</th><th>Pagamento</th></tr></thead>
+        <thead><tr><th>Hora</th><th>Placa</th><th>Cliente</th><th>Pagamento</th><th></th></tr></thead>
         <tbody id="tabelaHoje"></tbody>
       </table>
       <div id="vazioHoje" class="vazio">Nenhuma carga lançada hoje.</div>
@@ -363,7 +388,21 @@
         <label><input type="radio" name="nuPapel" value="secretaria" checked> Secretária</label>
         <label><input type="radio" name="nuPapel" value="gestor"> Gestor</label>
       </div>
-      <div class="sub" style="margin-top:6px">Secretária: lança vendas, depósitos, despesas e cadastra veículos, mas não altera nem exclui nada depois de lançado.</div>
+      <div id="nuPermsBox"><label>Atribuições</label>
+      <div id="nuPerms"><div class="perms">
+        <div class="t">Lançamentos</div>
+        <label><input type="checkbox" data-perm="lancar_vendas" checked> Lançar vendas</label>
+        <label><input type="checkbox" data-perm="lancar_depositos" checked> Depósitos na carteira</label>
+        <label><input type="checkbox" data-perm="lancar_despesas" checked> Lançar despesas</label>
+        <label><input type="checkbox" data-perm="cadastrar_veiculos" checked> Cadastrar veículos</label>
+        <label><input type="checkbox" data-perm="ver_painel" checked> Ver painel de vendas</label>
+        <div class="t">Alterações (sempre com justificativa)</div>
+        <label><input type="checkbox" data-perm="alterar_vendas"> Alterar / cancelar vendas (caixa)</label>
+        <label><input type="checkbox" data-perm="alterar_depositos"> Alterar / cancelar depósitos</label>
+        <label><input type="checkbox" data-perm="alterar_despesas"> Alterar / excluir despesas</label>
+        <label><input type="checkbox" data-perm="alterar_veiculos"> Alterar veículos</label>
+      </div></div></div>
+      <div class="sub" id="nuGestorInfo" style="margin-top:6px" hidden>Gestor tem todas as atribuições.</div>
       <button class="btn" id="btnNovoUsuario" type="submit">Criar acesso</button>
       <div id="msgNovoUsuario"></div>
     </form>
@@ -418,6 +457,23 @@
 </nav>
 
 <!-- ===================== FICHA / CADASTRO DE VEÍCULO ===================== -->
+<dialog id="dlgAlterar">
+  <form class="corpo" id="formAlterar" method="dialog">
+    <div class="topo"><h2 id="tituloAlterar">Alterar lançamento</h2><button class="link" value="fechar" formnovalidate>Fechar</button></div>
+    <div class="sub" id="infoAlterar"></div>
+    <div id="boxAltForma">
+      <label for="altForma">Forma de pagamento</label>
+      <select id="altForma"><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option><option value="credito">Cartão de crédito</option><option value="debito">Cartão de débito</option></select>
+    </div>
+    <label for="altJust">Justificativa (obrigatória)</label>
+    <textarea id="altJust" maxlength="300" placeholder="Ex.: cliente pagou em dinheiro, não em Pix"></textarea>
+    <div class="sub">A alteração fica registrada no caixa e no relatório de caixa, com seu nome, data e hora.</div>
+    <button class="btn" id="btnAltSalvar" type="button">Salvar alteração</button>
+    <button class="btn sec" id="btnAltExcluir" type="button" style="color:var(--vermelho)">Cancelar lançamento</button>
+    <div id="msgAlt"></div>
+  </form>
+</dialog>
+
 <dialog id="dlgUsuario">
   <form class="corpo" id="formUsuario" method="dialog">
     <div class="topo"><h2 id="tituloUsuario">Acesso</h2><button class="link" value="fechar" formnovalidate>Fechar</button></div>
@@ -431,6 +487,21 @@
       <label><input type="radio" name="duPapel" value="gestor"> Gestor</label>
     </div>
     <button class="btn sec" id="btnDuPapel" type="button">Salvar papel</button>
+    <div id="duPermsBox"><label>Atribuições</label>
+    <div id="duPerms"><div class="perms">
+        <div class="t">Lançamentos</div>
+        <label><input type="checkbox" data-perm="lancar_vendas"> Lançar vendas</label>
+        <label><input type="checkbox" data-perm="lancar_depositos"> Depósitos na carteira</label>
+        <label><input type="checkbox" data-perm="lancar_despesas"> Lançar despesas</label>
+        <label><input type="checkbox" data-perm="cadastrar_veiculos"> Cadastrar veículos</label>
+        <label><input type="checkbox" data-perm="ver_painel"> Ver painel de vendas</label>
+        <div class="t">Alterações (sempre com justificativa)</div>
+        <label><input type="checkbox" data-perm="alterar_vendas"> Alterar / cancelar vendas (caixa)</label>
+        <label><input type="checkbox" data-perm="alterar_depositos"> Alterar / cancelar depósitos</label>
+        <label><input type="checkbox" data-perm="alterar_despesas"> Alterar / excluir despesas</label>
+        <label><input type="checkbox" data-perm="alterar_veiculos"> Alterar veículos</label>
+      </div></div>
+    <button class="btn sec" id="btnDuPerms" type="button">Salvar atribuições</button></div>
     <button class="btn" id="btnDuBloquear" type="button">Bloquear acesso</button>
     <div id="msgDu"></div>
   </form>
@@ -525,7 +596,7 @@ function mostrarTela(t) {
   $("barra").classList.toggle("oculto", !logado);
   $("rodape").classList.toggle("oculto", !logado);
   document.querySelector(".app").classList.toggle("logado", logado);
-  $("dash").classList.toggle("oculto", !logado);
+  $("dash").classList.toggle("oculto", !logado || $("dash").dataset.bloqueado === "1");
   $("dash").classList.toggle("so-largo", t !== "telaCargas");
   $$("nav.barra button").forEach(b => b.classList.toggle("ativa", b.dataset.aba === t));
   $("titulo").textContent = TITULOS[t] || "Areia Limpa";
@@ -573,7 +644,7 @@ db.auth.onAuthStateChange((ev, sessao) => {
 
 async function carregarPerfil() {
   if (!usuario) return;
-  const { data, error } = await db.from("perfis").select("nome,papel").eq("id", usuario.id).maybeSingle();
+  const { data, error } = await db.from("perfis").select("nome,papel,permissoes").eq("id", usuario.id).maybeSingle();
   if (error) { mostrarTela("telaLogin"); return msg("msgLogin", traduzir(error)); }
   perfil = data || { papel: "pendente", nome: "" };
   if (perfil.papel === "pendente") return mostrarTela("telaPendente");
@@ -581,12 +652,26 @@ async function carregarPerfil() {
   $("tituloDespesas").textContent = perfil.papel === "gestor" ? "Despesas lançadas" : "Despesas lançadas por você";
   const gestor = perfil.papel === "gestor";
   $("navUsuarios").classList.toggle("oculto", !gestor);
+  aplicarPermissoes();
   document.querySelector("nav.barra .in").style.gridTemplateColumns = `repeat(${gestor ? 5 : 4}, 1fr)`;
   mostrarTela("telaCargas");
   $("quando").value = agoraLocal(); $("quando").max = agoraLocal();
   $("dataCredito").value = hojeISO(); $("dataDespesa").value = hojeISO();
   preencherCategorias();
   await carregarBase();
+}
+
+// ---------------- Atribuições do acesso ----------------
+const pode = (k) => perfil?.papel === "gestor" || !!(perfil?.permissoes && perfil.permissoes[k]);
+function aplicarPermissoes() {
+  $("btnAbrirVenda").classList.toggle("oculto", !pode("lancar_vendas"));
+  $("btnCadastrarVeiculo").classList.toggle("oculto", !pode("cadastrar_veiculos"));
+  $("btnNovoVeiculo").classList.toggle("oculto", !pode("cadastrar_veiculos"));
+  $("formCredito").classList.toggle("oculto", !pode("lancar_depositos"));
+  $("formDespesa").classList.toggle("oculto", !pode("lancar_despesas"));
+  document.querySelector(".acoes2").style.gridTemplateColumns = pode("cadastrar_veiculos") ? "" : "1fr";
+  $("dash").dataset.bloqueado = pode("ver_painel") ? "" : "1";
+  if (!pode("ver_painel")) $("dash").classList.add("oculto");
 }
 
 // ---------------- Dados base ----------------
@@ -633,35 +718,116 @@ function montarFrequentes() {
   $$(".chip").forEach(b => b.onclick = () => escolherPlaca(b.dataset.placa));
 }
 function escolherPlaca(p) { $("placa").value = p; atualizarPlaca(); }
+function calcularCaixa(cargas, deps) {
+  const por = Object.fromEntries(FORMAS_CAIXA.map(f => [f, 0]));
+  let usado = 0, nCart = 0, dep = 0;
+  for (const r of cargas) {
+    const vc = Number(r.valor_carteira || 0), recebido = Number(r.valor) - vc;
+    if (vc > 0) { usado += vc; nCart++; }
+    if (recebido > 0.009) { const f = r.forma_pagamento === "carteira" ? (r.forma_complemento || "pix") : r.forma_pagamento; por[f] = (por[f] || 0) + recebido; }
+  }
+  for (const x of deps) { por[x.forma_pagamento] = (por[x.forma_pagamento] || 0) + Number(x.valor_pago); dep += Number(x.valor_pago); }
+  return { por, usado, nCart, dep, total: FORMAS_CAIXA.reduce((t, f) => t + por[f], 0) };
+}
+const CAMPOS_VENDA = "id,data,placa,valor,forma_pagamento,forma_complemento,valor_carteira,observacao";
+function intervaloDia(iso) { const ini = new Date(iso + "T00:00:00"), fim = new Date(ini); fim.setDate(fim.getDate() + 1); return [ini.toISOString(), fim.toISOString()]; }
+let vendasPorId = {}, depositosPorId = {}, despesasPorId = {};
+function linhaVenda(r, comValor) {
+  vendasPorId[r.id] = r;
+  const vc = Number(r.valor_carteira || 0), rec = Number(r.valor) - vc;
+  const acao = pode("alterar_vendas") ? `<button type="button" class="acaoLinha" data-alterar-venda="${r.id}">Alterar</button>` : "";
+  return `<tr><td>${hora(r.data)}</td><td class="pl">${esc(r.placa)}</td><td>${esc(nomeCliente(veiculoDe(r.placa)))}</td>
+    <td>${vc > 0 ? `<span class="tag ouro">${descPagamento(r)}</span>` : `<span class="tag cin">${descPagamento(r)}</span>`}</td>
+    ${comValor ? `<td class="num">${rec > 0.009 ? moeda(rec) : "—"}</td>` : ""}<td class="naoImprimir">${acao}</td></tr>`;
+}
+function ligarAcoes(raiz) {
+  raiz.querySelectorAll("[data-alterar-venda]").forEach(b => b.onclick = () => abrirAlteracao("carregamentos", vendasPorId[b.dataset.alterarVenda]));
+  raiz.querySelectorAll("[data-alterar-deposito]").forEach(b => b.onclick = () => abrirAlteracao("creditos_antecipados", depositosPorId[b.dataset.alterarDeposito]));
+  raiz.querySelectorAll("[data-alterar-despesa]").forEach(b => b.onclick = () => abrirAlteracao("despesas", despesasPorId[b.dataset.alterarDespesa]));
+}
 async function carregarHoje() {
-  const ini = new Date(); ini.setHours(0, 0, 0, 0);
+  const [ini, fim] = intervaloDia(hojeISO());
   const [c, d] = await Promise.all([
-    db.from("carregamentos").select("data,placa,valor,forma_pagamento,forma_complemento,valor_carteira").gte("data", ini.toISOString()).order("data", { ascending: false }),
+    db.from("carregamentos").select(CAMPOS_VENDA).gte("data", ini).lt("data", fim).order("data", { ascending: false }),
     db.from("creditos_antecipados").select("valor_pago,forma_pagamento").eq("data", hojeISO()),
   ]);
   if (c.error) return;
   const data = c.data || [];
   $("totalHoje").textContent = data.length;
   $("vazioHoje").classList.toggle("oculto", data.length > 0);
-  $("tabelaHoje").innerHTML = data.map(r => { const vc = Number(r.valor_carteira || 0); return `<tr><td>${hora(r.data)}</td><td class="pl">${esc(r.placa)}</td><td>${esc(nomeCliente(veiculoDe(r.placa)))}</td><td>${vc > 0 ? `<span class="tag ouro">${descPagamento(r)}</span>` : `<span class="tag cin">${descPagamento(r)}</span>`}</td></tr>`; }).join("");
-  // Caixa do dia (regime de caixa)
-  const por = Object.fromEntries(FORMAS_CAIXA.map(f => [f, 0]));
-  let usado = 0, nCart = 0, dep = 0;
-  for (const r of data) {
-    const vc = Number(r.valor_carteira || 0), recebido = Number(r.valor) - vc;
-    if (vc > 0) { usado += vc; nCart++; }
-    if (recebido > 0.009) { const f = r.forma_pagamento === "carteira" ? (r.forma_complemento || "pix") : r.forma_pagamento; por[f] = (por[f] || 0) + recebido; }
-  }
-  for (const x of (d.data || [])) { por[x.forma_pagamento] = (por[x.forma_pagamento] || 0) + Number(x.valor_pago); dep += Number(x.valor_pago); }
-  const total = FORMAS_CAIXA.reduce((t, f) => t + por[f], 0);
-  $("caixaTotal").textContent = moeda(total);
-  $("caixaMini").textContent = moeda(total);
-  $("caixaFormas").innerHTML = FORMAS_CAIXA.map(f => `<div><span>${NOME_FORMA[f]}</span><b>${moeda(por[f])}</b></div>`).join("");
-  $("caixaNotas").innerHTML = [
-    dep > 0 ? `Inclui ${moeda(dep)} de depósitos em carteira.` : "",
-    usado > 0 ? `Pago com carteira: <b class="sai">− ${moeda(usado)}</b> (${nCart} carga${nCart > 1 ? "s" : ""}). Não soma: o dinheiro entrou no dia do depósito.` : "",
-  ].filter(Boolean).join("<br>");
+  $("tabelaHoje").innerHTML = data.map(r => linhaVenda(r, false)).join("");
+  ligarAcoes($("tabelaHoje"));
+  $("caixaMini").textContent = moeda(calcularCaixa(data, d.data || []).total);
+  if (!$("cartaoCaixa").classList.contains("oculto") && $("caixaDia").value === hojeISO()) carregarCaixa();
 }
+/** Relatório de caixa de um dia: totais por forma, vendas, depósitos e alterações com justificativa. */
+async function carregarCaixa() {
+  const dia = $("caixaDia").value || hojeISO();
+  const [ini, fim] = intervaloDia(dia);
+  const [c, d, a] = await Promise.all([
+    db.from("carregamentos").select(CAMPOS_VENDA).gte("data", ini).lt("data", fim).order("data"),
+    db.from("creditos_antecipados").select("id,data,placa,valor_pago,forma_pagamento,observacao").eq("data", dia),
+    db.from("alteracoes").select("feito_em,resumo,justificativa,usuario_nome,acao").eq("dia", dia).order("feito_em"),
+  ]);
+  const vendas = c.data || [], deps = d.data || [], alts = a.data || [];
+  const cx = calcularCaixa(vendas, deps);
+  $("caixaTitulo").textContent = dia === hojeISO() ? "Caixa de hoje" : "Caixa de " + dataBR(dia);
+  $("caixaTotal").textContent = moeda(cx.total);
+  $("caixaFormas").innerHTML = FORMAS_CAIXA.map(f => `<div><span>${NOME_FORMA[f]}</span><b>${moeda(cx.por[f])}</b></div>`).join("");
+  $("caixaNotas").innerHTML = [
+    `${vendas.length} venda${vendas.length === 1 ? "" : "s"} no dia.`,
+    cx.dep > 0 ? `Inclui ${moeda(cx.dep)} de depósitos em carteira.` : "",
+    cx.usado > 0 ? `Pago com carteira: <b class="sai">− ${moeda(cx.usado)}</b> (${cx.nCart} carga${cx.nCart > 1 ? "s" : ""}). Não soma: o dinheiro entrou no dia do depósito.` : "",
+  ].filter(Boolean).join("<br>");
+  $("caixaAlteracoes").innerHTML = alts.length ? `<h2 style="margin-top:14px">Alterações neste caixa (${alts.length})</h2>` + alts.map(x =>
+    `<div class="alt"><b>${esc(x.resumo)}</b>${hora(x.feito_em)} · ${esc(x.usuario_nome || "—")}${x.feito_em.slice(0, 10) !== dia ? " · em " + dataBR(x.feito_em) : ""}<br>Justificativa: ${esc(x.justificativa || "—")}</div>`).join("") : "";
+  $("caixaVendas").innerHTML = vendas.map(r => linhaVenda(r, true)).join("") || '<tr><td colspan="6" class="vazio">Nenhuma venda neste dia.</td></tr>';
+  depositosPorId = Object.fromEntries(deps.map(x => [x.id, x]));
+  $("caixaDepositos").innerHTML = deps.length ? `<h2 style="margin-top:14px">Depósitos em carteira</h2><table><tbody>` + deps.map(x =>
+    `<tr><td class="pl">${esc(x.placa)}</td><td>${esc(nomeCliente(veiculoDe(x.placa)))}</td><td>${NOME_FORMA[x.forma_pagamento]}</td><td class="num">${moeda(x.valor_pago)}</td>
+     <td class="naoImprimir">${pode("alterar_depositos") ? `<button type="button" class="acaoLinha" data-alterar-deposito="${x.id}">Cancelar</button>` : ""}</td></tr>`).join("") + "</tbody></table>" : "";
+  ligarAcoes($("cartaoCaixa"));
+}
+$("caixaDia").addEventListener("change", carregarCaixa);
+$("btnImprimirCaixa").onclick = () => window.print();
+
+// ---------------- Alterações com justificativa ----------------
+let alterando = null;
+function abrirAlteracao(tabela, reg) {
+  if (!reg) return;
+  alterando = { tabela, reg };
+  const venda = tabela === "carregamentos", usouCarteira = venda && Number(reg.valor_carteira || 0) > 0;
+  $("tituloAlterar").textContent = venda ? "Alterar venda" : tabela === "despesas" ? "Excluir despesa" : "Cancelar depósito";
+  $("infoAlterar").innerHTML = venda
+    ? `${esc(reg.placa)} · ${hora(reg.data)} · ${descPagamento(reg)}${usouCarteira ? "<br>Venda paga com carteira: só é possível cancelar." : ""}`
+    : tabela === "despesas" ? `${esc(NOME_CAT[reg.categoria] || reg.categoria)} · ${moeda(reg.valor)} · ${dataBR(reg.data)}`
+    : `${esc(reg.placa)} · ${moeda(reg.valor_pago)} · ${NOME_FORMA[reg.forma_pagamento]}`;
+  $("boxAltForma").classList.toggle("oculto", !venda || usouCarteira);
+  $("btnAltSalvar").classList.toggle("oculto", !venda || usouCarteira);
+  if (venda && !usouCarteira) $("altForma").value = reg.forma_pagamento;
+  $("btnAltExcluir").textContent = venda ? "Cancelar venda" : tabela === "despesas" ? "Excluir despesa" : "Cancelar depósito";
+  $("altJust").value = ""; msg("msgAlt", "");
+  $("dlgAlterar").showModal();
+}
+async function executarAlteracao(excluir) {
+  const just = $("altJust").value.trim();
+  if (just.length < 5) return msg("msgAlt", "Escreva a justificativa (mínimo 5 letras).");
+  const { tabela, reg } = alterando;
+  if (excluir && !confirm("Confirmar? O lançamento sai do caixa e a justificativa fica registrada.")) return;
+  const { error } = excluir
+    ? await db.rpc("excluir_registro", { tabela, registro: reg.id, justificativa: just })
+    : await db.rpc("alterar_registro", { tabela, registro: reg.id, campos: { forma_pagamento: $("altForma").value }, justificativa: just });
+  if (error) return msg("msgAlt", traduzir(error));
+  $("dlgAlterar").close();
+  await carregarHoje();
+  if (!$("cartaoCaixa").classList.contains("oculto")) carregarCaixa();
+  if (tabela === "despesas") carregarDespesas();
+  if (tabela === "creditos_antecipados") carregarSaldos();
+  carregarDash();
+}
+$("btnAltSalvar").onclick = () => executarAlteracao(false);
+$("btnAltExcluir").onclick = () => executarAlteracao(true);
+
 $("btnAtualizar").onclick = carregarBase;
 // Botões de ação: abre um painel por vez, logo abaixo dos botões
 function abrirPainel(id) {
@@ -675,7 +841,7 @@ function abrirPainel(id) {
   if (id === "formCarga") { $("quando").value = agoraLocal(); setTimeout(() => $("placa").focus(), 250); }
 }
 $("btnAbrirVenda").onclick = () => abrirPainel("formCarga");
-$("btnAbrirCaixa").onclick = () => { abrirPainel("cartaoCaixa"); carregarHoje(); };
+$("btnAbrirCaixa").onclick = () => { if (!$("caixaDia").value) $("caixaDia").value = hojeISO(); $("caixaDia").max = hojeISO(); abrirPainel("cartaoCaixa"); carregarCaixa(); };
 $("btnCadastrarVeiculo").onclick = () => { $("buscaVeiculo").value = ""; abrirVeiculo(null); };
 $$("[data-fechar]").forEach(b => b.onclick = () => abrirPainel(b.dataset.fechar));
 $("placa").addEventListener("input", atualizarPlaca);
@@ -810,10 +976,10 @@ function abrirVeiculo(v) {
       <div class="cartao" style="margin:0;background:var(--suave)"><div class="sub">Carteira</div><div style="font-size:24px;font-weight:800">${moeda(s ? s.saldo : 0)}</div><div class="sub">de saldo${s ? `<br>${moeda(s.depositado)} depositados · ${moeda(s.usado)} usados` : ""}</div></div></div>`;
   } else $("fichaResumo").innerHTML = "";
   msg("msgVeiculo", "");
-  const soLeitura = !!v && perfil?.papel !== "gestor";
+  const soLeitura = !!v && !pode("alterar_veiculos");
   $$("#formVeiculo input").forEach(i => { if (i.id !== "vPlaca") i.disabled = soLeitura; });
   $("btnSalvarVeiculo").classList.toggle("oculto", soLeitura);
-  if (soLeitura) msg("msgVeiculo", "Somente o gestor pode alterar um veículo já cadastrado.", "aviso");
+  if (soLeitura) msg("msgVeiculo", "Você não tem permissão para alterar um veículo já cadastrado.", "aviso");
   $("dlgVeiculo").showModal();
 }
 $("formVeiculo").onsubmit = async (ev) => {
@@ -902,10 +1068,12 @@ function preencherCategorias() {
     : "Extraordinária (caixa de investimentos): compra de máquina, obra etc. Entra só no resultado final.";
 }
 async function carregarDespesas() {
-  const { data } = await db.from("despesas").select("data,categoria,descricao,valor").order("data", { ascending: false }).limit(60);
+  const { data } = await db.from("despesas").select("id,data,categoria,descricao,valor").order("data", { ascending: false }).limit(60);
   const lista = data || [];
+  despesasPorId = Object.fromEntries(lista.map(d => [d.id, d]));
   $("vazioDespesas").classList.toggle("oculto", lista.length > 0);
-  $("tabelaDespesas").innerHTML = lista.map(d => `<tr><td>${dataBR(d.data)}</td><td>${esc(NOME_CAT[d.categoria] || d.categoria)}</td><td>${esc(d.descricao || "—")}</td><td class="num">${moeda(d.valor)}</td></tr>`).join("");
+  $("tabelaDespesas").innerHTML = lista.map(d => `<tr><td>${dataBR(d.data)}</td><td>${esc(NOME_CAT[d.categoria] || d.categoria)}</td><td>${esc(d.descricao || "—")}${pode("alterar_despesas") ? ` <button type="button" class="acaoLinha" data-alterar-despesa="${d.id}">Excluir</button>` : ""}</td><td class="num">${moeda(d.valor)}</td></tr>`).join("");
+  ligarAcoes($("tabelaDespesas"));
 }
 $("formDespesa").onsubmit = async (ev) => {
   ev.preventDefault();
@@ -928,6 +1096,12 @@ setInterval(() => { if (perfil && perfil.papel !== "pendente") carregarDash(); }
 
 // ---------------- USUÁRIOS (só gestor) ----------------
 let usuarios = [], usuarioEditando = null;
+const lerPerms = (id) => Object.fromEntries([...$(id).querySelectorAll("[data-perm]")].map(c => [c.dataset.perm, c.checked]));
+const marcarPerms = (id, p) => $(id).querySelectorAll("[data-perm]").forEach(c => c.checked = !!(p && p[c.dataset.perm]));
+$$("input[name=nuPapel]").forEach(r => r.onchange = () => {
+  const g = document.querySelector("input[name=nuPapel]:checked").value === "gestor";
+  $("nuPermsBox").hidden = g; $("nuGestorInfo").hidden = !g;
+});
 async function gerenciar(corpo) {
   const { data, error } = await db.functions.invoke("gerenciar-usuarios", { body: corpo });
   if (error) {
@@ -959,7 +1133,7 @@ $("formNovoUsuario").onsubmit = async (ev) => {
   $("btnNovoUsuario").disabled = true; msg("msgNovoUsuario", "");
   try {
     await gerenciar({ acao: "criar", nome: $("nuNome").value.trim(), usuario: u, senha: $("nuSenha").value,
-      papel: document.querySelector("input[name=nuPapel]:checked").value });
+      papel: document.querySelector("input[name=nuPapel]:checked").value, permissoes: lerPerms("nuPerms") });
     msg("msgNovoUsuario", `Acesso criado. Usuário: <b>${esc(u)}</b>. Entregue a senha pessoalmente.`, "ok");
     $("nuNome").value = ""; $("nuUsuario").value = ""; $("nuSenha").value = "";
     carregarUsuarios();
@@ -974,6 +1148,8 @@ function abrirUsuario(u) {
   $("duSenha").value = "";
   $$("input[name=duPapel]").forEach(r => { r.checked = r.value === u.papel; r.disabled = eu; });
   $("btnDuPapel").classList.toggle("oculto", eu);
+  $("duPermsBox").hidden = u.papel === "gestor";
+  marcarPerms("duPerms", u.permissoes);
   $("btnDuBloquear").classList.toggle("oculto", eu);
   $("btnDuBloquear").textContent = u.ativo === false ? "Desbloquear acesso" : "Bloquear acesso";
   msg("msgDu", "");
@@ -983,6 +1159,7 @@ async function acaoUsuario(corpo, ok) {
   try { await gerenciar({ id: usuarioEditando.id, ...corpo }); msg("msgDu", ok, "ok"); carregarUsuarios(); }
   catch (e) { msg("msgDu", traduzir(e)); }
 }
+$("btnDuPerms").onclick = () => acaoUsuario({ acao: "permissoes", permissoes: lerPerms("duPerms") }, "Atribuições salvas.");
 $("btnDuSenha").onclick = () => {
   const s = $("duSenha").value;
   if (s.length < 8) return msg("msgDu", "A senha precisa ter pelo menos 8 caracteres.");
