@@ -81,6 +81,11 @@
   .acoes { margin: -4px 0 16px; }
   .acoes .btn { margin-top: 0; }
   .acoes .principal { font-size: 18px; padding: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .atalhos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+  .atalhos button { background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 8px 4px; text-align: center; cursor: pointer; }
+  .atalhos button b { display: block; font: 700 14px ui-monospace, Menlo, monospace; color: var(--texto); }
+  .atalhos button span { display: block; font-size: 11px; color: var(--sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .atalhos button:hover { border-color: var(--areia); }
   .acoes2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
   .acoes2 .btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 8px; font-size: 15px; }
   .acoes2 .btn small { font-size: 12px; font-weight: 600; color: var(--verde); }
@@ -211,6 +216,7 @@
 
     <div class="acoes">
       <button class="btn principal" id="btnAbrirVenda" type="button">＋ Lançar venda</button>
+      <div class="atalhos" id="atalhos" title="Caçambas que mais carregam: toque para lançar a venda"></div>
       <div class="acoes2">
         <button class="btn sec" id="btnAbrirCaixa" type="button">Caixa<small id="caixaMini">R$ 0,00</small></button>
         <button class="btn sec" id="btnCadastrarVeiculo" type="button">Cadastrar<br>veículo</button>
@@ -716,6 +722,14 @@ function montarFrequentes() {
   $("chips").innerHTML = top.map(x => `<button type="button" class="chip" data-placa="${esc(x.placa)}"><b>${esc(x.placa)}</b><span>${esc(x.cliente || (x.motorista || "").split(" ")[0])}</span></button>`).join("");
   $("frequentes").classList.toggle("oculto", top.length === 0);
   $$(".chip").forEach(b => b.onclick = () => escolherPlaca(b.dataset.placa));
+  // Atalhos: as 8 caçambas que mais carregam (últimos 30 dias), logo abaixo de "Lançar venda"
+  const top8 = top.slice(0, 8);
+  $("atalhos").innerHTML = top8.map(x => `<button type="button" data-placa="${esc(x.placa)}"><b>${esc(x.placa)}</b><span>${esc(x.cliente || (x.motorista || "").split(" ")[0] || "—")}</span></button>`).join("");
+  $("atalhos").classList.toggle("oculto", !top8.length || !pode("lancar_vendas"));
+  $$("#atalhos button").forEach(b => b.onclick = () => {
+    if ($("formCarga").classList.contains("oculto")) abrirPainel("formCarga");
+    escolherPlaca(b.dataset.placa);
+  });
 }
 function escolherPlaca(p) { $("placa").value = p; atualizarPlaca(); }
 function calcularCaixa(cargas, deps) {
