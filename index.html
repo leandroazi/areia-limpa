@@ -159,6 +159,13 @@ label.lembrar { display:flex; align-items:center; gap:8px; font-weight:400; font
 label.lembrar input { width:auto; margin:0; }
 .btn.perigo { background: var(--vermelho); color: #fff; margin-top: 10px; }
 #tabelaUsuarios tr.excluido td { color: var(--sec); }
+table.lpr input[type=text] { margin: 0; padding: 8px 10px; font-family: ui-monospace, Menlo, monospace; text-transform: uppercase; }
+table.lpr input[type=checkbox] { width: auto; margin: 0; }
+.conf-dia { border-top: 1px solid var(--borda); padding-top: 10px; margin-top: 12px; }
+.conf-dia h3 { font-size: 15px; margin: 0 0 6px; display: flex; justify-content: space-between; gap: 8px; }
+.conf-item { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; font-size: 14px; border-bottom: 1px solid var(--suave); }
+.conf-item .pl { font-family: ui-monospace, Menlo, monospace; font-weight: 700; }
+.conf-ok { color: var(--verde); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -298,6 +305,38 @@ label.lembrar input { width:auto; margin:0; }
     </div>
   </section>
 
+  <!-- ===================== CÂMERA (LPR) ===================== -->
+  <section id="telaCamera" class="aba oculto">
+    <div class="cartao">
+      <h2>Arquivo da câmera (LPR)</h2>
+      <div class="sub">No programa da câmera Intelbras, exporte a lista de placas (CSV) e envie aqui. Pode mandar o arquivo completo: o que já foi enviado antes é ignorado.</div>
+      <label for="arqLpr">Arquivo CSV</label>
+      <input id="arqLpr" type="file" accept=".csv,text/csv">
+      <div id="msgLpr"></div>
+      <div id="previaLpr" class="oculto">
+        <div class="caixa" id="lprResumo"></div>
+        <div id="boxCorrecoes">
+          <h2 style="margin-top:14px">Placas com erro de leitura</h2>
+          <div class="sub">A câmera às vezes troca ou perde letras (ex.: 0 no lugar de O). Confira a placa sugerida; apague ou desmarque se não tiver certeza.</div>
+          <table class="lpr"><thead><tr><th></th><th>Lida</th><th>Placa correta</th></tr></thead><tbody id="lprCorrecoes"></tbody></table>
+          <details id="boxIncompletas" style="margin-top:8px"><summary class="sub" id="resumoIncompletas"></summary>
+            <table class="lpr"><tbody id="lprIncompletas"></tbody></table></details>
+        </div>
+        <button class="btn" id="btnImportarLpr" type="button">Salvar leituras</button>
+      </div>
+    </div>
+    <div class="cartao">
+      <h2>Conferência câmera × vendas</h2>
+      <div class="sub">Passagens da mesma placa com menos de 40 minutos contam como uma só (entrada e saída).</div>
+      <div class="linha2">
+        <div><label for="lprDe">De</label><input id="lprDe" type="date"></div>
+        <div><label for="lprAte">Até</label><input id="lprAte" type="date"></div>
+      </div>
+      <button class="btn sec" id="btnConferirLpr" type="button">Conferir</button>
+      <div id="lprConf"></div>
+    </div>
+  </section>
+
   <!-- ===================== VEÍCULOS ===================== -->
   <section id="telaVeiculos" class="aba oculto">
     <div class="cartao">
@@ -407,6 +446,7 @@ label.lembrar input { width:auto; margin:0; }
         <label><input type="checkbox" data-perm="lancar_despesas" checked> Lançar despesas</label>
         <label><input type="checkbox" data-perm="cadastrar_veiculos" checked> Cadastrar veículos</label>
         <label><input type="checkbox" data-perm="ver_painel" checked> Ver painel de vendas</label>
+        <label><input type="checkbox" data-perm="importar_lpr"> Enviar arquivo da câmera (LPR) e conferir placas</label>
         <div class="t">Alterações (sempre com justificativa)</div>
         <label><input type="checkbox" data-perm="alterar_vendas"> Alterar / cancelar vendas (caixa)</label>
         <label><input type="checkbox" data-perm="alterar_depositos"> Alterar / cancelar depósitos</label>
@@ -463,6 +503,7 @@ label.lembrar input { width:auto; margin:0; }
     <button data-aba="telaVeiculos" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 5h16v4H4zM4 11h16v4H4zM4 17h10v3H4z"/></svg>Veículos</button>
     <button data-aba="telaCarteira" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 7a2 2 0 012-2h13v3H5v9h15v-3h1v5H5a2 2 0 01-2-2zM14 10h8v4h-8a2 2 0 010-4z"/></svg>Carteira</button>
     <button data-aba="telaUsuarios" type="button" id="navUsuarios" class="oculto"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 11a4 4 0 110-8 4 4 0 010 8zm-7 9a7 7 0 0114 0zm15-9a3 3 0 110-6 3 3 0 010 6zm1.5 2a5.5 5.5 0 014.5 7h-5a8.9 8.9 0 00-2.4-6.3A5.4 5.4 0 0118.5 13z"/></svg>Usuários</button>
+    <button data-aba="telaCamera" type="button" id="navCamera" class="oculto"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 4h6l1.5 2H20a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h3.5zm3 4a5 5 0 100 10 5 5 0 000-10zm0 2.2a2.8 2.8 0 110 5.6 2.8 2.8 0 010-5.6z"/></svg>Câmera</button>
     <button data-aba="telaDespesas" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h9l5 5v15H6zM14 3v5h5M9 12h8v2H9zm0 4h8v2H9z"/></svg>Despesas</button>
   </div>
 </nav>
@@ -506,6 +547,7 @@ label.lembrar input { width:auto; margin:0; }
         <label><input type="checkbox" data-perm="lancar_despesas"> Lançar despesas</label>
         <label><input type="checkbox" data-perm="cadastrar_veiculos"> Cadastrar veículos</label>
         <label><input type="checkbox" data-perm="ver_painel"> Ver painel de vendas</label>
+        <label><input type="checkbox" data-perm="importar_lpr"> Enviar arquivo da câmera (LPR) e conferir placas</label>
         <div class="t">Alterações (sempre com justificativa)</div>
         <label><input type="checkbox" data-perm="alterar_vendas"> Alterar / cancelar vendas (caixa)</label>
         <label><input type="checkbox" data-perm="alterar_depositos"> Alterar / cancelar depósitos</label>
@@ -579,7 +621,7 @@ const NOME_CAT = Object.fromEntries([...CATEGORIAS.ord, ...CATEGORIAS.ext]);
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => document.querySelectorAll(sel);
 const TELAS = ["telaLogin", "telaNovaSenha", "telaPendente"];
-const ABAS = ["telaCargas", "telaVeiculos", "telaCarteira", "telaDespesas", "telaUsuarios"];
+const ABAS = ["telaCargas", "telaVeiculos", "telaCarteira", "telaDespesas", "telaUsuarios", "telaCamera"];
 const TITULOS = { telaCargas: "Lançamento de Cargas", telaVeiculos: "Veículos", telaCarteira: "Carteira de Clientes", telaDespesas: "Despesas", telaUsuarios: "Usuários" };
 const msg = (el, t, tipo = "erro") => { $(el).innerHTML = t ? `<div class="msg ${tipo}">${t}</div>` : ""; };
 const normalizar = (p) => (p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -622,7 +664,7 @@ function mostrarTela(t) {
   $("titulo").textContent = TITULOS[t] || "Areia Limpa";
   if (logado) window.scrollTo(0, 0);
 }
-$$("nav.barra button").forEach(b => b.onclick = () => { mostrarTela(b.dataset.aba); if (b.dataset.aba === "telaDespesas") carregarDespesas(); if (b.dataset.aba === "telaCarteira") carregarSaldos(); if (b.dataset.aba === "telaUsuarios") carregarUsuarios(); });
+$$("nav.barra button").forEach(b => b.onclick = () => { mostrarTela(b.dataset.aba); if (b.dataset.aba === "telaDespesas") carregarDespesas(); if (b.dataset.aba === "telaCarteira") carregarSaldos(); if (b.dataset.aba === "telaUsuarios") carregarUsuarios(); if (b.dataset.aba === "telaCamera") abrirCamera(); });
 
 // ---------------- Login ----------------
 const DOMINIO_USUARIOS = "areialimpa.local";
@@ -683,7 +725,8 @@ async function carregarPerfil() {
   const gestor = perfil.papel === "gestor";
   $("navUsuarios").classList.toggle("oculto", !gestor);
   aplicarPermissoes();
-  document.querySelector("nav.barra .in").style.gridTemplateColumns = `repeat(${gestor ? 5 : 4}, 1fr)`;
+  $("navCamera").classList.toggle("oculto", !pode("importar_lpr"));
+  document.querySelector("nav.barra .in").style.gridTemplateColumns = `repeat(${[...document.querySelectorAll("nav.barra .in button")].filter(b => !b.classList.contains("oculto")).length}, 1fr)`;
   mostrarTela("telaCargas");
   $("quando").value = agoraLocal();
   $("dataCredito").value = hojeISO(); $("dataDespesa").value = hojeISO();
@@ -1249,6 +1292,243 @@ $("btnDuExcluir").onclick = async () => {
     msg("msgUsuarios", `Acesso de <b>${esc(u.nome || u.usuario)}</b> excluído. O histórico foi mantido.`, "ok");
   } catch (e) { msg("msgDu", traduzir(e)); }
 };
+
+// ---------------- CÂMERA (arquivo LPR) ----------------
+const JANELA_LPR_MIN = 40;
+let lprArquivo = null;   // { linhas, sugestoes, jaEnviadas }
+const diaBahia = (d) => new Date(d).toLocaleDateString("sv-SE", { timeZone: "America/Bahia" });
+const semAcento = (t) => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+function distancia(a, b) {
+  const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let ant = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, ant + (a[i - 1] === b[j - 1] ? 0 : 1)); ant = t; }
+  }
+  return d[b.length];
+}
+/** Troca letras/números confundidos pela câmera conforme a posição (AAA9A99). */
+function ajustarPosicoes(p) {
+  if (p.length !== 7) return p;
+  const L = { "0": "O", "1": "I", "8": "B", "5": "S", "2": "Z", "6": "G", "4": "A", "7": "T" };
+  const D = { "O": "0", "Q": "0", "D": "0", "U": "0", "I": "1", "L": "1", "B": "8", "S": "5", "Z": "2", "G": "6", "T": "7", "A": "4" };
+  return p.split("").map((c, i) => i < 3 ? (L[c] || c) : i === 4 ? c : (D[c] || c)).join("");
+}
+function lerDataCamera(t) {
+  const m = (t || "").trim().match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?/)
+         || (t || "").trim().match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  const [, a, b, c, h, mi, s] = m;
+  const [dia, mes, ano] = a.length === 4 ? [c, b, a] : [a, b, c];
+  return `${ano}-${mes}-${dia}T${h}:${mi}:${s || "00"}-03:00`;   // horário da câmera = horário da Bahia
+}
+function dividirCSV(linha, sep) {
+  const out = []; let cur = "", q = false;
+  for (const ch of linha) {
+    if (ch === '"') q = !q;
+    else if (ch === sep && !q) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(x => x.trim());
+}
+function lerCSVCamera(texto) {
+  const linhas = texto.replace(/^﻿/, "").split(/\r?\n/).filter(l => l.trim());
+  if (linhas.length < 2) throw new Error("O arquivo está vazio.");
+  const sep = (linhas[0].split(";").length > linhas[0].split(",").length) ? ";" : ",";
+  const cab = dividirCSV(linhas[0], sep);
+  const col = (...nomes) => cab.findIndex(c => nomes.some(n => semAcento(c).includes(n)));
+  const iPlaca = col("placa", "plate"), iData = col("data e hora", "datetime", "data"), iDir = col("direcao"), iCor = col("cor do veiculo", "cor"), iPos = col("posicao");
+  if (iPlaca < 0 || iData < 0) throw new Error("Não encontrei as colunas Placa e Data e Hora. Confira se é o arquivo exportado da câmera.");
+  const res = []; let semData = 0;
+  for (const l of linhas.slice(1)) {
+    const c = dividirCSV(l, sep);
+    const data = lerDataCamera(c[iData]);
+    if (!data) { semData++; continue; }
+    const bruta = c[iPlaca] || "";
+    const n = normalizar(bruta);
+    const placa = (!n || !/\d/.test(n) || semAcento(bruta).startsWith("sem")) ? null : n;
+    res.push({ data, placa, lida: bruta, cor: iCor >= 0 ? c[iCor] : "", direcao: iDir >= 0 ? c[iDir] : "", posicao: iPos >= 0 ? c[iPos] : "",
+               bruto: Object.fromEntries(cab.map((k, i) => [k, c[i] ?? ""])) });
+  }
+  return { linhas: res, semData };
+}
+/** Sugere a placa certa para leituras com erro, usando placas cadastradas, correções anteriores e as mais frequentes do arquivo. */
+function sugerirCorrecoes(linhas, correcoes) {
+  const freq = {};
+  for (const l of linhas) if (l.placa) freq[l.placa] = (freq[l.placa] || 0) + 1;
+  const cad = new Set(veiculos.map(v => v.placa));
+  const anteriores = Object.fromEntries(correcoes.map(c => [c.lida, c.correta]));
+  const conhecidas = [...new Set([...cad, ...Object.keys(freq).filter(p => placaValida(p) && freq[p] >= 3)])];
+  const peso = (q) => (cad.has(q) ? 1000 : 0) + (freq[q] || 0);
+  const out = {};
+  for (const p of Object.keys(freq)) {
+    const valida = placaValida(p);
+    if (anteriores[p]) { out[p] = { sug: anteriores[p], n: freq[p], motivo: "já corrigida antes" }; continue; }
+    if (cad.has(p)) continue;
+    const ajustada = ajustarPosicoes(p);
+    if (ajustada !== p && conhecidas.includes(ajustada)) { out[p] = { sug: ajustada, n: freq[p] }; continue; }
+    let melhor = null, dMelhor = 99, empate = false;
+    for (const q of conhecidas) {
+      if (q === p) continue;
+      const d = distancia(p, q);
+      if (d < dMelhor || (d === dMelhor && peso(q) > peso(melhor))) { empate = d === dMelhor && melhor && peso(q) === peso(melhor); melhor = q; dMelhor = d; }
+      else if (d === dMelhor && peso(q) === peso(melhor)) empate = true;
+    }
+    const aceita = melhor && !empate && (valida ? dMelhor === 1 && (cad.has(melhor) || freq[melhor] >= 3 * freq[p]) : dMelhor <= 2);
+    if (aceita) out[p] = { sug: melhor, n: freq[p] };
+    else if (!valida) out[p] = { sug: "", n: freq[p] };   // placa quebrada sem sugestão: mostra para a pessoa digitar
+  }
+  return out;
+}
+async function abrirCamera() {
+  if (!$("lprAte").value) {
+    const hoje = hojeISO(); const d = new Date(hoje + "T12:00:00"); d.setDate(d.getDate() - 6);
+    $("lprAte").value = hoje; $("lprDe").value = d.toISOString().slice(0, 10);
+  }
+}
+$("arqLpr").onchange = async () => {
+  const f = $("arqLpr").files[0];
+  $("previaLpr").classList.add("oculto"); msg("msgLpr", ""); lprArquivo = null;
+  if (!f) return;
+  try {
+    let texto = await f.text();
+    if (texto.includes("�")) texto = new TextDecoder("windows-1252").decode(await f.arrayBuffer());
+    const { linhas, semData } = lerCSVCamera(texto);
+    if (!linhas.length) throw new Error("Nenhuma leitura com data válida no arquivo.");
+    const datas = linhas.map(l => l.data).sort();
+    const de = diaBahia(datas[0]), ate = diaBahia(datas[datas.length - 1]);
+    msg("msgLpr", "Verificando o que já foi enviado…", "aviso");
+    const { data: ja, error } = await db.rpc("dados_lpr", { de, ate });
+    if (error) throw error;
+    const chave = (d, p) => new Date(d).getTime() + "|" + (p || "");
+    const existentes = new Set(ja.leituras.map(l => chave(l.data, l.placa)));
+    const jaEnviadas = linhas.filter(l => existentes.has(chave(l.data, l.placa))).length;
+    const sugestoes = sugerirCorrecoes(linhas, ja.correcoes || []);
+    lprArquivo = { linhas, sugestoes, de, ate };
+    const semPlaca = linhas.filter(l => !l.placa).length;
+    const placas = new Set(linhas.map(l => l.placa).filter(Boolean));
+    $("lprResumo").innerHTML = [
+      ["Período", `${dataBR(de)} a ${dataBR(ate)}`], ["Leituras", linhas.length],
+      ["Novas", `<span class="ent">${linhas.length - jaEnviadas}</span>`], ["Já enviadas antes", jaEnviadas],
+      ["Placas diferentes", placas.size], ["Sem placa legível", semPlaca],
+    ].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("");
+    const lista = Object.entries(sugestoes).sort((a, b) => b[1].n - a[1].n);
+    const linhaCorr = ([p, s]) => `<tr data-lida="${esc(p)}">
+      <td><input type="checkbox" ${s.sug ? "checked" : ""}></td>
+      <td class="pl">${esc(p)} <span class="sub">${s.n}×</span></td>
+      <td><input type="text" maxlength="7" value="${esc(s.sug)}" placeholder="não sei"></td></tr>`;
+    const comSug = lista.filter(x => x[1].sug), semSug = lista.filter(x => !x[1].sug);
+    $("boxCorrecoes").classList.toggle("oculto", !lista.length);
+    $("lprCorrecoes").innerHTML = comSug.map(linhaCorr).join("") || '<tr><td colspan="3" class="sub">Nenhuma correção sugerida.</td></tr>';
+    $("lprIncompletas").innerHTML = semSug.map(linhaCorr).join("");
+    $("boxIncompletas").classList.toggle("oculto", !semSug.length);
+    $("resumoIncompletas").textContent = `${semSug.length} leitura(s) incompleta(s) sem sugestão — toque para ver e, se souber, digitar a placa`;
+    $$("#lprCorrecoes input[type=text], #lprIncompletas input[type=text]").forEach(i => i.oninput = () => { i.closest("tr").querySelector("input[type=checkbox]").checked = placaValida(normalizar(i.value)); });
+    $("btnImportarLpr").textContent = linhas.length - jaEnviadas ? `Salvar ${linhas.length - jaEnviadas} leituras novas` : "Salvar correções";
+    $("previaLpr").classList.remove("oculto");
+    msg("msgLpr", semData ? `${semData} linha(s) sem data válida foram ignoradas.` : "");
+  } catch (e) { msg("msgLpr", traduzir(e)); }
+};
+$("btnImportarLpr").onclick = async () => {
+  if (!lprArquivo) return;
+  const corr = {};
+  for (const tr of $$("#lprCorrecoes tr[data-lida], #lprIncompletas tr[data-lida]")) {
+    const v = normalizar(tr.querySelector("input[type=text]").value);
+    if (tr.querySelector("input[type=checkbox]").checked && placaValida(v)) corr[tr.dataset.lida] = v;
+  }
+  const payload = lprArquivo.linhas.map(l => ({ data: l.data, placa: l.placa, corrigida: l.placa ? corr[l.placa] || null : null,
+    cor: l.cor, direcao: l.direcao, bruto: l.bruto }));
+  $("btnImportarLpr").disabled = true;
+  const tot = { novas: 0, repetidas: 0 };
+  try {
+    for (let i = 0; i < payload.length; i += 500) {
+      msg("msgLpr", `Enviando… ${Math.min(i + 500, payload.length)} de ${payload.length}`, "aviso");
+      const { data, error } = await db.rpc("importar_leituras", { linhas: payload.slice(i, i + 500) });
+      if (error) throw error;
+      tot.novas += data.novas; tot.repetidas += data.repetidas;
+    }
+    msg("msgLpr", `Pronto: <b>${tot.novas}</b> leituras novas salvas${tot.repetidas ? ` · ${tot.repetidas} já estavam no sistema` : ""}${Object.keys(corr).length ? ` · ${Object.keys(corr).length} placas corrigidas` : ""}.`, "ok");
+    $("previaLpr").classList.add("oculto"); $("arqLpr").value = "";
+    const ate = lprArquivo.ate, d = new Date(ate + "T12:00:00"); d.setDate(d.getDate() - 6);
+    $("lprAte").value = ate; $("lprDe").value = [d.toISOString().slice(0, 10), lprArquivo.de].sort()[1];
+    lprArquivo = null;
+    conferirLpr();
+  } catch (e) { msg("msgLpr", traduzir(e)); }
+  finally { $("btnImportarLpr").disabled = false; }
+};
+/** Junta leituras da mesma placa com menos de 40 min: uma passagem. */
+function passagens(leituras, correcoes) {
+  const mapa = Object.fromEntries(correcoes.map(c => [c.lida, c.correta]));
+  const lista = leituras.filter(l => l.status !== "descartada")
+    .map(l => ({ t: new Date(l.data).getTime(), placa: l.corrigida || (l.placa && mapa[l.placa]) || l.placa || null }))
+    .sort((a, b) => a.t - b.t);
+  const ultima = {}, out = [];
+  for (const l of lista) {
+    if (!l.placa) { out.push({ placa: null, ini: l.t, fim: l.t }); continue; }
+    const u = ultima[l.placa];
+    if (u && l.t - u.fim <= JANELA_LPR_MIN * 6e4) { u.fim = l.t; continue; }
+    const p = { placa: l.placa, ini: l.t, fim: l.t }; ultima[l.placa] = p; out.push(p);
+  }
+  return out;
+}
+async function conferirLpr() {
+  const de = $("lprDe").value, ate = $("lprAte").value;
+  if (!de || !ate || de > ate) return msg("lprConf", "Escolha o período.");
+  $("lprConf").innerHTML = '<div class="vazio">Conferindo…</div>';
+  try {
+    const [{ data: dl, error: e1 }, vendas] = await Promise.all([
+      db.rpc("dados_lpr", { de, ate }),
+      buscarTudo(() => db.from("carregamentos").select("id,data,placa,ficticio").eq("ficticio", false)
+        .gte("data", `${de}T00:00:00-03:00`).lt("data", new Date(new Date(`${ate}T00:00:00-03:00`).getTime() + 864e5).toISOString()).order("data")),
+    ]);
+    if (e1) throw e1;
+    const pass = passagens(dl.leituras, dl.correcoes || []);
+    const tipo = Object.fromEntries(veiculos.map(v => [v.placa, v]));
+    const dias = {};
+    const dia = (d) => (dias[d] ||= { pass: {}, vendas: {}, semPlaca: 0, nCac: 0, nVendas: 0 });
+    const semCadastro = {};
+    for (const p of pass) {
+      const d = dia(diaBahia(p.ini));
+      if (!p.placa || !placaValida(p.placa)) { d.semPlaca++; continue; }   // sem placa ou leitura incompleta
+      const v = tipo[p.placa];
+      if (v?.tipo === "ignorado") continue;
+      if (!v) { const s = (semCadastro[p.placa] ||= { n: 0, ultimo: 0 }); s.n++; s.ultimo = Math.max(s.ultimo, p.ini); }
+      (d.pass[p.placa] ||= []).push(p.ini);
+      if (v) d.nCac++;
+    }
+    for (const v of vendas) { const d = dia(diaBahia(v.data)); (d.vendas[v.placa] ||= []).push(new Date(v.data).getTime()); d.nVendas++; }
+    const hh = (t) => new Date(t).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bahia" });
+    let html = "", totSem = 0, totSemPass = 0;
+    for (const d of Object.keys(dias).sort().reverse()) {
+      const x = dias[d], itens = [];
+      for (const [pl, ts] of Object.entries(x.pass)) {
+        if (!tipo[pl]) continue;                    // não cadastrada: vai para a lista abaixo
+        const n = (x.vendas[pl] || []).length;
+        if (ts.length > n) { itens.push(`<div class="conf-item"><span><span class="pl">${esc(pl)}</span> passou ${ts.length}× e tem ${n} venda${n === 1 ? "" : "s"}</span><span class="sai">${ts.map(hh).join(", ")}</span></div>`); totSem += ts.length - n; }
+      }
+      for (const [pl, ts] of Object.entries(x.vendas)) {
+        const n = (x.pass[pl] || []).length;
+        if (ts.length > n) { itens.push(`<div class="conf-item"><span><span class="pl">${esc(pl)}</span> venda sem passagem na câmera${n ? ` (${ts.length} vendas, ${n} passagens)` : ""}</span><span>${ts.map(hh).join(", ")}</span></div>`); totSemPass += ts.length - n; }
+      }
+      html += `<div class="conf-dia"><h3><span>${new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
+        <span class="sub">${x.nCac} passagens de caçambas · ${x.nVendas} vendas${x.semPlaca ? ` · ${x.semPlaca} sem placa legível` : ""}</span></h3>
+        ${itens.join("") || '<div class="conf-ok">✓ Câmera e vendas batem</div>'}</div>`;
+    }
+    const sc = Object.entries(semCadastro).sort((a, b) => b[1].n - a[1].n);
+    const resumo = `<div class="caixa" style="margin-top:12px">
+      <div><span>Passou sem venda</span><b class="${totSem ? "sai" : ""}">${totSem}</b></div>
+      <div><span>Venda sem câmera</span><b>${totSemPass}</b></div>
+      <div><span>Placas sem cadastro</span><b>${sc.length}</b></div>
+      <div><span>Leituras no período</span><b>${dl.leituras.length}</b></div></div>`;
+    const listaSC = sc.length ? `<h2 style="margin-top:16px">Placas lidas sem cadastro</h2>
+      <div class="sub">Cadastre as caçambas (ou marque como "Outros" os carros que não compram areia) para a conferência ficar completa.</div>
+      ${sc.map(([pl, s]) => `<div class="conf-item"><span><span class="pl">${esc(pl)}</span> · ${s.n} passage${s.n === 1 ? "m" : "ns"} · última ${new Date(s.ultimo).toLocaleDateString("pt-BR", { timeZone: "America/Bahia" })}</span>
+        ${pode("cadastrar_veiculos") ? `<button class="link" type="button" data-cadastrar="${esc(pl)}">Cadastrar</button>` : ""}</div>`).join("")}` : "";
+    $("lprConf").innerHTML = (dl.leituras.length ? resumo + html : '<div class="vazio">Nenhuma leitura da câmera nesse período. Envie o arquivo acima.</div>') + listaSC;
+    $$("[data-cadastrar]").forEach(b => b.onclick = () => { $("buscaVeiculo").value = b.dataset.cadastrar; abrirVeiculo(null); });
+  } catch (e) { $("lprConf").innerHTML = ""; msg("lprConf", traduzir(e)); }
+}
+$("btnConferirLpr").onclick = conferirLpr;
 
 // ---------------- PAINEL (dashboard) ----------------
 const diaLocal = (d) => { const x = new Date(d); return new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
