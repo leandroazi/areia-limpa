@@ -157,6 +157,8 @@
   .caixa b { font-weight: 700; }
 label.lembrar { display:flex; align-items:center; gap:8px; font-weight:400; font-size:14px; margin:4px 0 10px; cursor:pointer; }
 label.lembrar input { width:auto; margin:0; }
+.btn.perigo { background: var(--vermelho); color: #fff; margin-top: 10px; }
+#tabelaUsuarios tr.excluido td { color: var(--sec); }
 </style>
 </head>
 <body>
@@ -512,6 +514,8 @@ label.lembrar input { width:auto; margin:0; }
       </div></div>
     <button class="btn sec" id="btnDuPerms" type="button">Salvar atribuições</button></div>
     <button class="btn" id="btnDuBloquear" type="button">Bloquear acesso</button>
+    <button class="btn perigo" id="btnDuExcluir" type="button">Excluir acesso</button>
+    <div class="sub">Excluir tira o acesso para sempre e libera o nome de usuário. Tudo o que a pessoa lançou ou alterou continua registrado com o nome dela.</div>
     <div id="msgDu"></div>
   </form>
 </dialog>
@@ -1157,14 +1161,21 @@ async function sessaoEncerrada(texto) {
 async function carregarUsuarios() {
   msg("msgUsuarios", "");
   try {
-    usuarios = (await gerenciar({ acao: "listar" })).usuarios || [];
+    const todos = (await gerenciar({ acao: "listar" })).usuarios || [];
+    usuarios = todos.filter(u => !u.excluido_em);
+    const excluidos = todos.filter(u => u.excluido_em);
     const eu = usuario?.id;
     $("tabelaUsuarios").innerHTML = usuarios.map(u => `<tr data-id="${u.id}" style="cursor:pointer">
       <td>${esc(u.nome || "—")}${u.id === eu ? ' <span class="tag ouro">você</span>' : ""}</td>
       <td class="pl">${esc(u.usuario || (u.email || "").split("@")[0])}</td>
       <td>${u.papel === "gestor" ? "Gestor" : u.papel === "secretaria" ? "Secretária" : "Aguardando"}</td>
-      <td>${u.ativo === false ? '<span class="tag bloq">Bloqueado</span>' : '<span class="tag ok">Ativo</span>'}</td></tr>`).join("");
-    $$("#tabelaUsuarios tr").forEach(tr => tr.onclick = () => abrirUsuario(usuarios.find(x => x.id === tr.dataset.id)));
+      <td>${u.ativo === false ? '<span class="tag bloq">Bloqueado</span>' : '<span class="tag ok">Ativo</span>'}</td></tr>`).join("")
+      + excluidos.map(u => `<tr class="excluido" title="Acesso excluído — o histórico de lançamentos continua registrado">
+      <td>${esc(u.nome || "—")}</td>
+      <td class="pl">${esc(u.usuario_original || (u.email || "").split("@")[0])}</td>
+      <td>${u.papel === "gestor" ? "Gestor" : "Secretária"}</td>
+      <td><span class="tag">Excluído ${new Date(u.excluido_em).toLocaleDateString("pt-BR")}</span></td></tr>`).join("");
+    $$("#tabelaUsuarios tr[data-id]").forEach(tr => tr.onclick = () => abrirUsuario(usuarios.find(x => x.id === tr.dataset.id)));
   } catch (e) { msg("msgUsuarios", traduzir(e)); }
 }
 $("btnAtualizarUsuarios").onclick = carregarUsuarios;
@@ -1193,6 +1204,8 @@ function abrirUsuario(u) {
   $("duPermsBox").hidden = u.papel === "gestor";
   marcarPerms("duPerms", u.permissoes);
   $("btnDuBloquear").classList.toggle("oculto", eu);
+  $("btnDuExcluir").classList.toggle("oculto", eu);
+  $("btnDuExcluir").nextElementSibling.classList.toggle("oculto", eu);
   $("btnDuBloquear").textContent = u.ativo === false ? "Desbloquear acesso" : "Bloquear acesso";
   msg("msgDu", "");
   $("dlgUsuario").showModal();
@@ -1225,6 +1238,16 @@ $("btnDuBloquear").onclick = () => {
   usuarioEditando.ativo = !bloquear;
   $("btnDuBloquear").textContent = bloquear ? "Desbloquear acesso" : "Bloquear acesso";
   acaoUsuario({ acao: "bloquear", bloqueado: bloquear }, bloquear ? "Acesso bloqueado." : "Acesso desbloqueado.");
+};
+$("btnDuExcluir").onclick = async () => {
+  const u = usuarioEditando;
+  if (!confirm(`Excluir o acesso de ${u.nome || u.usuario}?\n\nA pessoa não conseguirá mais entrar e o usuário "${u.usuario || ""}" ficará livre. Tudo o que ela lançou ou alterou continua registrado com o nome dela.`)) return;
+  try {
+    await gerenciar({ id: u.id, acao: "excluir" });
+    $("dlgUsuario").close();
+    await carregarUsuarios();
+    msg("msgUsuarios", `Acesso de <b>${esc(u.nome || u.usuario)}</b> excluído. O histórico foi mantido.`, "ok");
+  } catch (e) { msg("msgDu", traduzir(e)); }
 };
 
 // ---------------- PAINEL (dashboard) ----------------
