@@ -1139,12 +1139,20 @@ $$("input[name=nuPapel]").forEach(r => r.onchange = () => {
 async function gerenciar(corpo) {
   const { data, error } = await db.functions.invoke("gerenciar-usuarios", { body: corpo });
   if (error) {
+    if (error.context?.status === 401) { await sessaoEncerrada("Sua sessão expirou. Entre novamente."); throw new Error("Sua sessão expirou. Entre novamente."); }
     let m = error.message;
     try { const j = await error.context.json(); m = j.erro || m; } catch (_) {}
     throw new Error(m);
   }
   if (data?.erro) throw new Error(data.erro);
   return data;
+}
+/** Sessão derrubada no servidor (ex.: troca da própria senha): volta para o login com um aviso. */
+async function sessaoEncerrada(texto) {
+  document.querySelectorAll("dialog[open]").forEach(d => d.close());
+  await db.auth.signOut({ scope: "local" });
+  mostrarTela("telaLogin");
+  msg("msgLogin", texto, "aviso");
 }
 async function carregarUsuarios() {
   msg("msgUsuarios", "");
@@ -1197,6 +1205,13 @@ $("btnDuPerms").onclick = () => acaoUsuario({ acao: "permissoes", permissoes: le
 $("btnDuSenha").onclick = () => {
   const s = $("duSenha").value;
   if (s.length < 8) return msg("msgDu", "A senha precisa ter pelo menos 8 caracteres.");
+  if (usuarioEditando.id === usuario?.id) {
+    // trocar a própria senha encerra a sessão atual no servidor
+    gerenciar({ id: usuarioEditando.id, acao: "senha", senha: s })
+      .then(() => sessaoEncerrada("Senha alterada. Entre novamente com a nova senha."))
+      .catch(e => msg("msgDu", traduzir(e)));
+    return;
+  }
   acaoUsuario({ acao: "senha", senha: s }, "Senha alterada.");
 };
 $("btnDuPapel").onclick = () => {
