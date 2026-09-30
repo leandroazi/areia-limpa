@@ -155,6 +155,8 @@
   .caixa { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
   .caixa div { background: var(--suave); border-radius: 10px; padding: 8px 10px; font-size: 13px; display: flex; justify-content: space-between; }
   .caixa b { font-weight: 700; }
+label.lembrar { display:flex; align-items:center; gap:8px; font-weight:400; font-size:14px; margin:4px 0 10px; cursor:pointer; }
+label.lembrar input { width:auto; margin:0; }
 </style>
 </head>
 <body>
@@ -181,6 +183,7 @@
       <input id="email" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
       <label for="senha">Senha</label>
       <input id="senha" type="password" autocomplete="current-password" required>
+      <label class="lembrar"><input id="lembrar" type="checkbox" checked> Manter conectado e lembrar meu usuário</label>
       <button class="btn" id="btnLogin" type="submit">Entrar</button>
       <button class="link" id="btnEsqueci" type="button">Esqueci a senha</button>
       <div id="msgLogin"></div>
@@ -554,7 +557,14 @@
 <script>
 const SUPABASE_URL = "https://atswjpmefbwoblslnjcl.supabase.co";
 const SUPABASE_KEY = "sb_publishable_tdx6GYJycYilXhDgvgpWuw_7lsv48ID";
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+// "Manter conectado": com a opção marcada a sessão fica guardada neste navegador; desmarcada, some ao fechar a aba.
+const lembrarLogin = () => { try { return localStorage.getItem("lembrarLogin") !== "0"; } catch { return false; } };
+const armazenamentoSessao = {
+  getItem: (k) => { try { return (lembrarLogin() ? localStorage : sessionStorage).getItem(k); } catch { return null; } },
+  setItem: (k, v) => { try { (lembrarLogin() ? localStorage : sessionStorage).setItem(k, v); } catch {} },
+  removeItem: (k) => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch {} },
+};
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: armazenamentoSessao } });
 
 const CATEGORIAS = {
   ord: [["diesel","Óleo diesel"],["funcionarios","Funcionários"],["manutencao","Manutenção"],["energia","Energia elétrica"],["internet","Internet"],["gerais","Despesas gerais"]],
@@ -617,6 +627,11 @@ const loginParaEmail = (t) => { t = (t || "").trim().toLowerCase(); return t.inc
 $("formLogin").onsubmit = async (ev) => {
   ev.preventDefault();
   const email = loginParaEmail($("email").value), senha = $("senha").value;
+  const lembrar = $("lembrar").checked;
+  try {
+    localStorage.setItem("lembrarLogin", lembrar ? "1" : "0");
+    if (lembrar) localStorage.setItem("ultimoLogin", $("email").value.trim()); else localStorage.removeItem("ultimoLogin");
+  } catch {}
   $("btnLogin").disabled = true; msg("msgLogin", "");
   try {
     const { error } = await db.auth.signInWithPassword({ email, password: senha });
@@ -624,6 +639,11 @@ $("formLogin").onsubmit = async (ev) => {
   } catch (e) { msg("msgLogin", traduzir(e)); }
   finally { $("btnLogin").disabled = false; }
 };
+try {
+  $("lembrar").checked = lembrarLogin();
+  const ultimo = localStorage.getItem("ultimoLogin");
+  if (ultimo && lembrarLogin()) $("email").value = ultimo;
+} catch {}
 $("btnEsqueci").onclick = async () => {
   const email = $("email").value.trim();
   if (!email.includes("@")) return msg("msgLogin", "Esqueceu a senha? Peça ao gestor para criar uma nova para você.", "aviso");
