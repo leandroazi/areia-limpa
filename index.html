@@ -661,7 +661,7 @@ async function carregarPerfil() {
   aplicarPermissoes();
   document.querySelector("nav.barra .in").style.gridTemplateColumns = `repeat(${gestor ? 5 : 4}, 1fr)`;
   mostrarTela("telaCargas");
-  $("quando").value = agoraLocal(); $("quando").max = agoraLocal();
+  $("quando").value = agoraLocal();
   $("dataCredito").value = hojeISO(); $("dataDespesa").value = hojeISO();
   preencherCategorias();
   await carregarBase();
