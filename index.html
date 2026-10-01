@@ -173,6 +173,20 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 .conc-linha { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 3px 0; }
 .conc-linha .dif { font-weight: 700; }
 .formas.formas2 { grid-template-columns: 1fr 1fr; }
+.camstatus { display: flex; align-items: center; gap: 10px; background: var(--suave); border-radius: 12px; padding: 10px 12px; font-size: 14px; margin-top: 6px; }
+.camstatus small { color: var(--sec); display: block; font-size: 12px; margin-top: 2px; }
+.ponto { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--borda); }
+.ponto.on { background: var(--verde); box-shadow: 0 0 0 4px #E6F4EA; } .ponto.aviso { background: var(--amarelo); } .ponto.off { background: var(--vermelho); }
+.camfotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }
+.camfotos button { border: 0; padding: 0; background: var(--suave); border-radius: 10px; overflow: hidden; text-align: left; cursor: pointer; color: var(--texto); }
+.camfotos img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; background: var(--borda); }
+.camfotos span { display: block; padding: 4px 6px; font-size: 12px; }
+.camfotos span b { font-family: ui-monospace, Menlo, monospace; }
+.hist-dia { font-size: 14px; font-weight: 700; margin: 12px 0 2px; display: flex; justify-content: space-between; }
+.hist-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--suave); font-size: 14px; }
+.hist-item .mini { width: 64px; height: 48px; object-fit: cover; border-radius: 6px; background: var(--suave); flex: none; border: 0; padding: 0; cursor: pointer; }
+.hist-item .pl { font-family: ui-monospace, Menlo, monospace; font-weight: 700; }
+.hist-item small { color: var(--sec); display: block; font-size: 12px; }
 .tabPrecos { display: grid; grid-template-columns: auto 1fr 1fr; gap: 6px 8px; align-items: center; margin-top: 8px; }
 .tabPrecos input { margin: 0; }
 .tabPrecos b { font-size: 13px; }
@@ -328,6 +342,26 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 
   <!-- ===================== CÂMERA (LPR) ===================== -->
   <section id="telaCamera" class="aba oculto">
+    <div class="cartao">
+      <div class="topo">
+        <h2>Câmera da entrada</h2>
+        <button class="btn sec" style="width:auto;margin:0;padding:8px 12px" id="btnAtualizarCam" type="button">Atualizar</button>
+      </div>
+      <div id="camStatus" class="camstatus"><span class="ponto"></span><div>Carregando…</div></div>
+      <h2 style="margin-top:14px">Últimas fotos</h2>
+      <div id="camFotos" class="camfotos"></div>
+    </div>
+    <div class="cartao">
+      <h2>Histórico de leituras</h2>
+      <div class="sub">Tudo o que a câmera leu (ao vivo e pelas planilhas enviadas). Toque na foto para ampliar.</div>
+      <div class="linha2">
+        <div><label for="histDe">De</label><input id="histDe" type="date"></div>
+        <div><label for="histAte">Até</label><input id="histAte" type="date"></div>
+      </div>
+      <input id="histBusca" type="search" placeholder="Filtrar por placa">
+      <button class="btn sec" id="btnHistorico" type="button">Ver leituras</button>
+      <div id="histLista"></div>
+    </div>
     <div class="cartao">
       <h2>Arquivo da câmera (LPR)</h2>
       <div class="sub">No programa da câmera Intelbras, exporte a lista de placas (CSV) e envie aqui. Pode mandar o arquivo completo: o que já foi enviado antes é ignorado.</div>
@@ -566,6 +600,13 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 </nav>
 
 <!-- ===================== FICHA / CADASTRO DE VEÍCULO ===================== -->
+<dialog id="dlgFoto">
+  <form class="corpo" method="dialog">
+    <img id="fotoGrande" alt="Foto da câmera" style="width:100%;border-radius:12px;display:block;background:var(--suave)">
+    <div id="fotoLegenda" style="margin:10px 0;font-size:14px"></div>
+    <button class="btn sec" type="submit">Fechar</button>
+  </form>
+</dialog>
 <dialog id="dlgAlterar">
   <form class="corpo" id="formAlterar" method="dialog">
     <div class="topo"><h2 id="tituloAlterar">Alterar lançamento</h2><button class="link" value="fechar" formnovalidate>Fechar</button></div>
@@ -1517,7 +1558,97 @@ async function abrirCamera() {
     const hoje = hojeISO(); const d = new Date(hoje + "T12:00:00"); d.setDate(d.getDate() - 6);
     $("lprAte").value = hoje; $("lprDe").value = d.toISOString().slice(0, 10);
   }
+  if (!$("histAte").value) { $("histAte").value = hojeISO(); $("histDe").value = hojeISO(); }
+  carregarStatusCamera();
+  if (!histCarregado) carregarHistorico();
 }
+
+// ---------- Status da câmera, últimas fotos e histórico ----------
+let histCarregado = false, histDados = [];
+const fotoUrls = new Map();               // caminho -> url assinada (vale 1 h)
+const horaBR = (d) => new Date(d).toLocaleTimeString("pt-BR", { timeZone: "America/Bahia", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const diaHoraBR = (d) => new Date(d).toLocaleString("pt-BR", { timeZone: "America/Bahia", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+function haQuanto(seg) {
+  if (seg < 60) return "agora há pouco";
+  const m = Math.round(seg / 60); if (m < 60) return `há ${m} min`;
+  const h = Math.floor(m / 60); if (h < 48) return `há ${h} h${m % 60 ? " " + (m % 60) + " min" : ""}`;
+  return `há ${Math.floor(h / 24)} dias`;
+}
+async function urlsFotos(caminhos) {
+  const faltam = [...new Set(caminhos.filter(c => c && !fotoUrls.has(c)))];
+  for (let i = 0; i < faltam.length; i += 100) {
+    const { data } = await db.storage.from("leituras").createSignedUrls(faltam.slice(i, i + 100), 3600);
+    (data || []).forEach(u => { if (u.signedUrl) fotoUrls.set(u.path, u.signedUrl); });
+  }
+}
+function placaLeitura(l) {
+  const p = l.corrigida || l.placa;
+  return p ? `<span class="pl">${esc(p)}</span>${l.corrigida && l.placa && l.corrigida !== l.placa ? ` <small style="display:inline">(lida ${esc(l.placa)})</small>` : ""}` : `<span class="pl" style="color:var(--sec)">sem placa</span>`;
+}
+function abrirFoto(caminho, legenda) {
+  const u = fotoUrls.get(caminho); if (!u) return;
+  $("fotoGrande").src = u; $("fotoLegenda").innerHTML = legenda; $("dlgFoto").showModal();
+}
+async function carregarStatusCamera() {
+  const { data, error } = await db.rpc("status_camera", { fotos: 10 });
+  if (error) { $("camStatus").innerHTML = `<span class="ponto"></span><div>${esc(error.message)}</div>`; return; }
+  const s = data.status || {}, agora = new Date(data.agora);
+  let cls = "off", txt = "Ainda sem contato da câmera";
+  if (s.ultimo_contato) {
+    const seg = (agora - new Date(s.ultimo_contato)) / 1000;
+    if (seg < 120) { cls = "on"; txt = "Online"; }
+    else if (seg < 600) { cls = "aviso"; txt = `Sem sinal ${haQuanto(seg)}`; }
+    else { txt = `Offline: último sinal ${haQuanto(seg)}`; }
+  }
+  const det = [s.ultimo_contato ? `Último sinal: ${diaHoraBR(s.ultimo_contato)}` : "",
+               s.ultima_leitura ? `Última leitura: ${diaHoraBR(s.ultima_leitura)}` : "Nenhuma leitura ao vivo ainda",
+               `Leituras hoje: ${data.leituras_hoje}`].filter(Boolean).join(" · ");
+  $("camStatus").innerHTML = `<span class="ponto ${cls}"></span><div><b>${txt}</b><small>${det}</small></div>`;
+  const fotos = data.fotos || [];
+  await urlsFotos(fotos.map(f => f.foto_path));
+  $("camFotos").innerHTML = fotos.length ? fotos.map((f, i) => `<button type="button" data-i="${i}">
+      <img loading="lazy" src="${esc(fotoUrls.get(f.foto_path) || "")}" alt="">
+      <span><b>${esc(f.corrigida || f.placa || "sem placa")}</b><br>${diaHoraBR(f.data)}</span></button>`).join("")
+    : `<div class="vazio" style="grid-column:1/-1">As fotos aparecem aqui assim que a câmera registrar a primeira passagem.</div>`;
+  $$("#camFotos button").forEach(b => b.onclick = () => { const f = fotos[+b.dataset.i];
+    abrirFoto(f.foto_path, `${placaLeitura(f)} · ${diaHoraBR(f.data)}${f.tipo ? " · " + esc(f.tipo) : ""}${f.cor ? " · " + esc(f.cor) : ""}`); });
+}
+async function carregarHistorico() {
+  const de = $("histDe").value, ate = $("histAte").value;
+  if (!de || !ate || de > ate) { $("histLista").innerHTML = `<div class="msg erro">Escolha um período válido.</div>`; return; }
+  $("histLista").innerHTML = `<div class="vazio">Carregando…</div>`;
+  const { data, error } = await db.rpc("historico_camera", { de, ate });
+  if (error) { $("histLista").innerHTML = `<div class="msg erro">${esc(error.message)}</div>`; return; }
+  histDados = data || []; histCarregado = true;
+  await mostrarHistorico();
+}
+async function mostrarHistorico() {
+  const busca = $("histBusca").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const lista = histDados.filter(l => !busca || (l.placa || "").includes(busca) || (l.corrigida || "").includes(busca));
+  if (!lista.length) { $("histLista").innerHTML = `<div class="vazio">Nenhuma leitura neste período.</div>`; return; }
+  const mostra = lista.slice(0, 300);
+  await urlsFotos(mostra.map(l => l.foto_path));
+  let html = "", diaAtual = "";
+  const porDia = {}; lista.forEach(l => { const d = diaBahia(l.data); porDia[d] = (porDia[d] || 0) + 1; });
+  mostra.forEach((l, i) => {
+    const d = diaBahia(l.data);
+    if (d !== diaAtual) { diaAtual = d; html += `<div class="hist-dia"><span>${dataBR(d)}</span><span style="color:var(--sec);font-weight:500">${porDia[d]} leitura(s)</span></div>`; }
+    const foto = l.foto_path && fotoUrls.get(l.foto_path)
+      ? `<button type="button" class="mini" data-i="${i}" style="background:url('${esc(fotoUrls.get(l.foto_path))}') center/cover"></button>`
+      : `<div class="mini" style="display:flex;align-items:center;justify-content:center;color:var(--sec);font-size:11px">sem foto</div>`;
+    const extra = [l.tipo, l.cor, l.direcao, l.origem === "importacao" ? "planilha" : "ao vivo"].filter(Boolean).map(esc).join(" · ");
+    html += `<div class="hist-item">${foto}<div style="flex:1">${placaLeitura(l)}${l.status === "descartada" ? ' <span class="tag">descartada</span>' : ""}<small>${horaBR(l.data)} · ${extra}</small></div></div>`;
+  });
+  if (lista.length > mostra.length) html += `<div class="sub" style="margin-top:8px">Mostrando as 300 mais recentes de ${lista.length}. Diminua o período ou filtre pela placa.</div>`;
+  $("histLista").innerHTML = html;
+  $$("#histLista .mini[data-i]").forEach(b => b.onclick = () => { const l = mostra[+b.dataset.i];
+    abrirFoto(l.foto_path, `${placaLeitura(l)} · ${dataBR(diaBahia(l.data))} ${horaBR(l.data)}`); });
+}
+$("btnAtualizarCam").onclick = carregarStatusCamera;
+$("btnHistorico").onclick = carregarHistorico;
+$("histBusca").oninput = () => { if (histCarregado) mostrarHistorico(); };
+// status ao vivo: atualiza a cada 30 s enquanto a aba Câmera estiver aberta
+setInterval(() => { if (!document.hidden && !$("telaCamera").classList.contains("oculto") && perfil) carregarStatusCamera(); }, 30000);
 $("arqLpr").onchange = async () => {
   const f = $("arqLpr").files[0];
   $("previaLpr").classList.add("oculto"); msg("msgLpr", ""); lprArquivo = null;
