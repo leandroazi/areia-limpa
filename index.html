@@ -172,6 +172,10 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 .rolagem select { margin: 0; padding: 4px 6px; font-size: 13px; width: auto; }
 .conc-linha { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 3px 0; }
 .conc-linha .dif { font-weight: 700; }
+.formas.formas2 { grid-template-columns: 1fr 1fr; }
+.tabPrecos { display: grid; grid-template-columns: auto 1fr 1fr; gap: 6px 8px; align-items: center; margin-top: 8px; }
+.tabPrecos input { margin: 0; }
+.tabPrecos b { font-size: 13px; }
 </style>
 </head>
 <body>
@@ -270,8 +274,19 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
         <label>Mais frequentes (toque para escolher)</label>
         <div class="chips" id="chips"></div>
       </div>
-      <label for="produto">Produto</label>
-      <select id="produto"><option value="areia" selected>Areia</option></select>
+      <label>Material</label>
+      <div class="formas formas2" id="materiais">
+        <label><input type="radio" name="material" value="areia_limpa" checked>Areia limpa</label>
+        <label><input type="radio" name="material" value="areia_suja">Areia suja</label>
+      </div>
+      <label>Caçamba</label>
+      <div class="formas formas2" id="portes">
+        <label><input type="radio" name="porte" value="truck" checked>Truck</label>
+        <label><input type="radio" name="porte" value="toco">Toco</label>
+      </div>
+      <label for="valorVenda">Valor da carga (R$)</label>
+      <input id="valorVenda" type="number" min="1" step="0.01" required style="font-weight:700;font-size:20px">
+      <div class="sub" id="origemPreco"></div>
       <label>Forma de pagamento</label>
       <div class="formas" id="formas">
         <label><input type="radio" name="forma" value="pix" checked>Pix</label>
@@ -345,6 +360,17 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 
   <!-- ===================== VEÍCULOS ===================== -->
   <section id="telaVeiculos" class="aba oculto">
+    <div class="cartao oculto" id="cartaoPrecos">
+      <h2>Tabela de preços</h2>
+      <div class="sub">Valor que vem preenchido na venda, conforme a caçamba e o material. Na hora do lançamento ainda dá para alterar.</div>
+      <div class="tabPrecos">
+        <span></span><b>Areia limpa</b><b>Areia suja</b>
+        <b>Truck</b><input id="pTruckLimpa" type="number" min="0" step="0.01"><input id="pTruckSuja" type="number" min="0" step="0.01">
+        <b>Toco</b><input id="pTocoLimpa" type="number" min="0" step="0.01"><input id="pTocoSuja" type="number" min="0" step="0.01">
+      </div>
+      <button class="btn sec" id="btnSalvarPrecos" type="button">Salvar preços</button>
+      <div id="msgPrecos"></div>
+    </div>
     <div class="cartao">
       <div class="topo">
         <h2>Veículos</h2>
@@ -605,6 +631,18 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       <label><input type="radio" name="vTipo" value="ignorado"> Outro veículo</label>
     </div>
     <div class="sub" style="margin-top:6px">Caçambas contam como venda. "Outro veículo" (funcionário, empresa, fornecedor) é ignorado pela câmera.</div>
+    <div id="boxPorte">
+      <label>Porte da caçamba</label>
+      <div class="radio">
+        <label><input type="radio" name="vPorte" value="truck"> Truck</label>
+        <label><input type="radio" name="vPorte" value="toco"> Toco</label>
+      </div>
+      <div class="linha2">
+        <div><label for="vPrecoLimpa">Preço especial · limpa</label><input id="vPrecoLimpa" type="number" min="0" step="0.01" placeholder="tabela"></div>
+        <div><label for="vPrecoSuja">Preço especial · suja</label><input id="vPrecoSuja" type="number" min="0" step="0.01" placeholder="tabela"></div>
+      </div>
+      <div class="sub">Deixe em branco para usar a tabela de preços. Preencha só para clientes com preço diferente (ex.: truck com limpa a R$ 400).</div>
+    </div>
     <div class="linha2">
       <div><label for="vModelo">Marca / modelo</label><input id="vModelo" type="text" maxlength="60"></div>
       <div><label for="vCor">Cor</label><input id="vCor" type="text" maxlength="30"></div>
@@ -680,7 +718,7 @@ function traduzir(e) {
 
 // ---------------- Estado ----------------
 let usuario = null, perfil = null, recuperando = false;
-let veiculos = [], precos = [], acessos = {}, saldos = {}, extrato = [];
+let veiculos = [], precos = [], acessos = {}, saldos = {}, extrato = [], tabelaPrecos = {};
 let filtroVeic = "cacamba", veiculoEditando = null;
 
 function mostrarTela(t) {
@@ -758,6 +796,7 @@ async function carregarPerfil() {
   aplicarPermissoes();
   $("navCamera").classList.toggle("oculto", !pode("importar_lpr"));
   $("cartaoExtrato").classList.toggle("oculto", !gestor);
+  $("cartaoPrecos").classList.toggle("oculto", !gestor);
   document.querySelector('nav.barra button[data-aba="telaDespesas"]').lastChild.textContent = gestor ? "Financeiro" : "Despesas";
   document.querySelector("nav.barra .in").style.gridTemplateColumns = `repeat(${[...document.querySelectorAll("nav.barra .in button")].filter(b => !b.classList.contains("oculto")).length}, 1fr)`;
   mostrarTela("telaCargas");
@@ -783,12 +822,15 @@ function aplicarPermissoes() {
 // ---------------- Dados base ----------------
 async function carregarBase() {
   const [v, p, a, s] = await Promise.all([
-    db.from("veiculos").select("id,placa,tipo,modelo,cor,motorista,telefone,cliente,observacao,situacao,motivo_bloqueio").order("placa"),
+    db.from("veiculos").select("id,placa,tipo,modelo,cor,motorista,telefone,cliente,observacao,situacao,motivo_bloqueio,porte,preco_limpa,preco_suja").order("placa"),
     db.from("precos_carga").select("vigente_desde,valor").order("vigente_desde"),
     db.rpc("resumo_acessos"),
     db.rpc("saldo_creditos"),
   ]);
   veiculos = v.data || []; precos = p.data || [];
+  const { data: pm } = await db.from("precos_material").select("porte,produto,valor");
+  tabelaPrecos = Object.fromEntries((pm || []).map(x => [`${x.porte}|${x.produto}`, Number(x.valor)]));
+  preencherTabelaPrecos();
   acessos = Object.fromEntries((a.data || []).map(x => [x.placa, x]));
   saldos = Object.fromEntries((s.data || []).map(x => [x.placa, x]));
   $("listaPlacas").innerHTML = veiculos.filter(x => x.tipo === "cacamba").map(x => `<option value="${esc(x.placa)}">${esc([x.cliente, x.motorista].filter(Boolean).join(" · "))}</option>`).join("");
@@ -843,14 +885,15 @@ function calcularCaixa(cargas, deps) {
   for (const x of deps) { por[x.forma_pagamento] = (por[x.forma_pagamento] || 0) + Number(x.valor_pago); dep += Number(x.valor_pago); }
   return { por, usado, nCart, dep, total: FORMAS_CAIXA.reduce((t, f) => t + por[f], 0) };
 }
-const CAMPOS_VENDA = "id,data,placa,valor,forma_pagamento,forma_complemento,valor_carteira,observacao";
+const CAMPOS_VENDA = "id,data,placa,valor,forma_pagamento,forma_complemento,valor_carteira,observacao,produto,porte";
 function intervaloDia(iso) { const ini = new Date(iso + "T00:00:00"), fim = new Date(ini); fim.setDate(fim.getDate() + 1); return [ini.toISOString(), fim.toISOString()]; }
 let vendasPorId = {}, depositosPorId = {}, despesasPorId = {};
 function linhaVenda(r, comValor) {
   vendasPorId[r.id] = r;
   const vc = Number(r.valor_carteira || 0), rec = Number(r.valor) - vc;
   const acao = pode("alterar_vendas") ? `<button type="button" class="acaoLinha" data-alterar-venda="${r.id}">Alterar</button>` : "";
-  return `<tr><td>${hora(r.data)}</td><td class="pl">${esc(r.placa)}</td><td>${esc(nomeCliente(veiculoDe(r.placa)))}</td>
+  const mat = r.produto === "areia_suja" ? ' <span class="tag cin">suja</span>' : "";
+  return `<tr><td>${hora(r.data)}</td><td class="pl">${esc(r.placa)}${mat}</td><td>${esc(nomeCliente(veiculoDe(r.placa)))}</td>
     <td>${vc > 0 ? `<span class="tag ouro">${descPagamento(r)}</span>` : `<span class="tag cin">${descPagamento(r)}</span>`}</td>
     ${comValor ? `<td class="num">${rec > 0.009 ? moeda(rec) : "—"}</td>` : ""}<td class="naoImprimir">${acao}</td></tr>`;
 }
@@ -965,6 +1008,49 @@ function buscarVeiculos(t) {
   if (!q) return [];
   return veiculos.filter(v => v.tipo === "cacamba" && ((qp && v.placa.includes(qp)) || (v.motorista || "").toLowerCase().includes(q) || (v.cliente || "").toLowerCase().includes(q))).slice(0, 8);
 }
+// ---------------- Preço da venda: material × porte (preço especial do veículo tem prioridade) ----------------
+const NOME_MATERIAL = { areia_limpa: "Areia limpa", areia_suja: "Areia suja", areia: "Areia" };
+const materialSel = () => document.querySelector("input[name=material]:checked")?.value || "areia_limpa";
+const porteSel = () => document.querySelector("input[name=porte]:checked")?.value || "truck";
+function precoSugerido(placa, porte, material) {
+  const v = veiculoDe(placa);
+  const especial = v && Number(material === "areia_suja" ? v.preco_suja : v.preco_limpa);
+  if (especial > 0) return { valor: especial, origem: "preço especial deste cliente" };
+  const t = tabelaPrecos[`${porte}|${material}`];
+  if (t > 0) return { valor: t, origem: `tabela de preços (${porte === "toco" ? "toco" : "truck"})` };
+  return { valor: null, origem: "sem preço na tabela para essa combinação — digite o valor" };
+}
+function aplicarPrecoSugerido(forcar) {
+  const ent = $("valorVenda");
+  if (ent.dataset.manual === "1" && !forcar) return atualizarPagamento();
+  const s = precoSugerido(normalizar($("placa").value), porteSel(), materialSel());
+  ent.value = s.valor ?? ""; ent.dataset.manual = "";
+  $("origemPreco").textContent = s.valor ? `Valor: ${s.origem}. Pode alterar se necessário.` : s.origem;
+  atualizarPagamento();
+}
+$$("input[name=material], input[name=porte]").forEach(r => r.onchange = () => aplicarPrecoSugerido(true));
+$("valorVenda").addEventListener("input", () => { $("valorVenda").dataset.manual = "1"; $("origemPreco").textContent = "Valor alterado manualmente."; atualizarPagamento(); });
+function preencherTabelaPrecos() {
+  const ids = { pTruckLimpa: "truck|areia_limpa", pTruckSuja: "truck|areia_suja", pTocoLimpa: "toco|areia_limpa", pTocoSuja: "toco|areia_suja" };
+  for (const [id, k] of Object.entries(ids)) $(id).value = tabelaPrecos[k] ?? "";
+  aplicarPrecoSugerido(false);
+}
+$$("input[name=vTipo]").forEach(r => r.addEventListener("change", () => $("boxPorte").classList.toggle("oculto", $("formVeiculo").vTipo.value !== "cacamba")));
+$("btnSalvarPrecos").onclick = async () => {
+  const ids = { pTruckLimpa: ["truck", "areia_limpa"], pTruckSuja: ["truck", "areia_suja"], pTocoLimpa: ["toco", "areia_limpa"], pTocoSuja: ["toco", "areia_suja"] };
+  $("btnSalvarPrecos").disabled = true;
+  try {
+    for (const [id, [porte, produto]] of Object.entries(ids)) {
+      const v = Number($(id).value);
+      if (v > 0) { const { error } = await db.from("precos_material").upsert({ porte, produto, valor: v }, { onConflict: "porte,produto" }); if (error) throw error; }
+      else { const { error } = await db.from("precos_material").delete().eq("porte", porte).eq("produto", produto); if (error) throw error; }
+    }
+    await carregarBase();
+    msg("msgPrecos", "Preços salvos.", "ok");
+  } catch (e) { msg("msgPrecos", traduzir(e)); }
+  finally { $("btnSalvarPrecos").disabled = false; }
+};
+
 function atualizarPlaca() {
   const texto = $("placa").value;
   const p = normalizar(texto);
@@ -984,7 +1070,13 @@ function atualizarPlaca() {
   $("optCarteira").disabled = s <= 0.009;
   $("saldoCredito").textContent = s > 0.009 ? moeda(s) : "sem saldo";
   // Nova placa: volta ao padrão (Pix)
-  if ($("placa").dataset.ultima !== p) { $("placa").dataset.ultima = p; document.querySelector("input[name=forma][value=pix]").checked = true; document.querySelector("input[name=complemento][value=pix]").checked = true; }
+  if ($("placa").dataset.ultima !== p) {
+    $("placa").dataset.ultima = p;
+    document.querySelector("input[name=forma][value=pix]").checked = true; document.querySelector("input[name=complemento][value=pix]").checked = true;
+    if (v?.porte) document.querySelector(`input[name=porte][value=${v.porte}]`).checked = true;
+    $("valorVenda").dataset.manual = "";
+    aplicarPrecoSugerido(true);
+  }
   $("frequentes").classList.toggle("oculto", texto.length > 0 || !$("chips").children.length);
   $("btnSalvar").disabled = v?.situacao === "bloqueado";
   atualizarPagamento();
@@ -993,7 +1085,7 @@ function atualizarPlaca() {
 function calcularPagamento() {
   const placa = normalizar($("placa").value);
   const quando = new Date($("quando").value || Date.now());
-  const valor = precoEm(quando), forma = formaSel();
+  const valor = r2(Number($("valorVenda").value) || 0), forma = formaSel();
   if (forma !== "carteira") return { valor, forma, valor_carteira: 0, forma_complemento: null, falta: 0 };
   const saldo = saldoDe(placa), doSaldo = r2(Math.min(Math.max(saldo, 0), valor)), falta = r2(valor - doSaldo);
   return { valor, forma, saldo, valor_carteira: doSaldo, forma_complemento: falta > 0.009 ? complementoSel() : null, falta };
@@ -1024,6 +1116,7 @@ $("formCarga").onsubmit = async (ev) => {
   const quando = new Date($("quando").value);
   if (isNaN(quando) || quando > new Date(Date.now() + 5 * 6e4)) return msg("msgCarga", "Data/hora inválida.");
   const pg = calcularPagamento();
+  if (!(pg.valor > 0)) return msg("msgCarga", "Informe o valor da carga.");
   if (pg.forma === "carteira" && pg.valor_carteira <= 0) return msg("msgCarga", "Este cliente não tem saldo na carteira. Escolha outra forma de pagamento.");
   $("btnSalvar").disabled = true; msg("msgCarga", "");
   try {
@@ -1031,11 +1124,11 @@ $("formCarga").onsubmit = async (ev) => {
     const { data: dup } = await db.from("carregamentos").select("id").eq("placa", placa).gte("data", de).lte("data", ate).limit(1);
     if (dup?.length && !confirm(`Já existe uma carga de ${placa} perto desse horário. Lançar mesmo assim?`)) return;
     const { error } = await db.from("carregamentos").insert({
-      data: quando.toISOString(), placa, valor: pg.valor, produto: $("produto").value,
+      data: quando.toISOString(), placa, valor: pg.valor, produto: materialSel(), porte: porteSel(),
       forma_pagamento: pg.forma, valor_carteira: pg.valor_carteira, forma_complemento: pg.forma_complemento,
       usou_credito: pg.valor_carteira > 0, observacao: ($("obs").value.trim() + " [web]").trim() });
     if (error) throw error;
-    msg("msgCarga", `Venda de ${placa} lançada às ${hora(quando)} · ${descPagamento({ valor: pg.valor, valor_carteira: pg.valor_carteira, forma_pagamento: pg.forma, forma_complemento: pg.forma_complemento })}.`, "ok");
+    msg("msgCarga", `Venda de ${placa} lançada às ${hora(quando)} · ${NOME_MATERIAL[materialSel()]} · ${moeda(pg.valor)} · ${descPagamento({ valor: pg.valor, valor_carteira: pg.valor_carteira, forma_pagamento: pg.forma, forma_complemento: pg.forma_complemento })}.`, "ok");
     $("placa").value = ""; $("obs").value = ""; $("quando").value = agoraLocal();
     await carregarBase(); atualizarPlaca(); $("placa").focus();
   } catch (e) { msg("msgCarga", traduzir(e)); }
@@ -1077,10 +1170,13 @@ function abrirVeiculo(v) {
   $("vPlaca").value = v?.placa || normalizar($("buscaVeiculo").value).slice(0, 7);
   $("vPlaca").readOnly = !!v;
   f.vTipo.value = v?.tipo || "cacamba";
+  $("boxPorte").classList.toggle("oculto", f.vTipo.value !== "cacamba");
   $("vModelo").value = v?.modelo || ""; $("vCor").value = v?.cor || "";
   $("vMotorista").value = v?.motorista || ""; $("vTelefone").value = v?.telefone || "";
   $("vCliente").value = v?.cliente || ""; $("vObs").value = v?.observacao || "";
   f.vSituacao.value = v?.situacao || "permitido";
+  $$("input[name=vPorte]").forEach(r => r.checked = r.value === (v?.porte || ""));
+  $("vPrecoLimpa").value = v?.preco_limpa ?? ""; $("vPrecoSuja").value = v?.preco_suja ?? "";
   $("vMotivo").value = v?.motivo_bloqueio || "";
   $("boxMotivo").classList.toggle("oculto", f.vSituacao.value !== "bloqueado");
   if (v) {
@@ -1106,7 +1202,10 @@ $("formVeiculo").onsubmit = async (ev) => {
   if (situacao === "bloqueado" && !$("vMotivo").value.trim()) return msg("msgVeiculo", "Informe o motivo do bloqueio.");
   const dados = { placa, tipo: f.vTipo.value, modelo: $("vModelo").value.trim(), cor: $("vCor").value.trim(),
     motorista: $("vMotorista").value.trim(), telefone: $("vTelefone").value.trim(), cliente: $("vCliente").value.trim(),
-    observacao: $("vObs").value.trim(), situacao, motivo_bloqueio: situacao === "bloqueado" ? $("vMotivo").value.trim() : "" };
+    observacao: $("vObs").value.trim(), situacao, motivo_bloqueio: situacao === "bloqueado" ? $("vMotivo").value.trim() : "",
+    porte: f.vTipo.value === "cacamba" ? (document.querySelector("input[name=vPorte]:checked")?.value || null) : null,
+    preco_limpa: Number($("vPrecoLimpa").value) > 0 ? Number($("vPrecoLimpa").value) : null,
+    preco_suja: Number($("vPrecoSuja").value) > 0 ? Number($("vPrecoSuja").value) : null };
   $("btnSalvarVeiculo").disabled = true;
   try {
     const r = veiculoEditando
