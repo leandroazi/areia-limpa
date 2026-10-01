@@ -166,6 +166,12 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 .conf-item { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; font-size: 14px; border-bottom: 1px solid var(--suave); }
 .conf-item .pl { font-family: ui-monospace, Menlo, monospace; font-weight: 700; }
 .conf-ok { color: var(--verde); font-size: 13px; }
+.rolagem { max-height: 340px; overflow: auto; border: 1px solid var(--borda); border-radius: 10px; margin-top: 8px; }
+.rolagem table { font-size: 13px; }
+.rolagem td, .rolagem th { padding: 6px; }
+.rolagem select { margin: 0; padding: 4px 6px; font-size: 13px; width: auto; }
+.conc-linha { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 3px 0; }
+.conc-linha .dif { font-weight: 700; }
 </style>
 </head>
 <body>
@@ -393,6 +399,25 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 
   <!-- ===================== DESPESAS ===================== -->
   <section id="telaDespesas" class="aba oculto">
+    <div class="cartao oculto" id="cartaoExtrato">
+      <h2>Conciliação bancária</h2>
+      <div class="sub">Envie o extrato do banco (OFX, CSV, Excel ou PDF). Só as entradas são usadas: Pix recebido e vendas no cartão. Somadas ao dinheiro em espécie, devem bater com o caixa das vendas.</div>
+      <label for="arqExtrato">Extrato bancário</label>
+      <input id="arqExtrato" type="file" accept=".ofx,.qfx,.csv,.txt,.xls,.xlsx,.pdf">
+      <div id="msgExtrato"></div>
+      <div id="previaExtrato" class="oculto">
+        <div class="caixa" id="extratoResumo"></div>
+        <div class="sub" style="margin-top:8px">Confira o tipo de cada entrada. Marque "ignorar" no que não é venda (ex.: transferência entre contas, empréstimo).</div>
+        <div class="rolagem"><table class="lpr"><thead><tr><th>Data</th><th>Descrição</th><th class="num">Valor</th><th>Tipo</th><th>Ignorar</th></tr></thead><tbody id="extratoLinhas"></tbody></table></div>
+        <button class="btn" id="btnSalvarExtrato" type="button">Salvar extrato</button>
+      </div>
+      <h2 style="margin-top:16px">Conferência do caixa</h2>
+      <div class="linha2" style="align-items:end">
+        <div><label for="mesConc">Mês</label><input id="mesConc" type="month"></div>
+        <div><button class="btn sec" id="btnConciliar" type="button" style="margin-top:0">Conferir</button></div>
+      </div>
+      <div id="concResultado"></div>
+    </div>
     <form id="formDespesa" class="cartao">
       <h2>Lançar despesa</h2>
       <label>Tipo</label>
@@ -664,7 +689,7 @@ function mostrarTela(t) {
   $("titulo").textContent = TITULOS[t] || "Areia Limpa";
   if (logado) window.scrollTo(0, 0);
 }
-$$("nav.barra button").forEach(b => b.onclick = () => { mostrarTela(b.dataset.aba); if (b.dataset.aba === "telaDespesas") carregarDespesas(); if (b.dataset.aba === "telaCarteira") carregarSaldos(); if (b.dataset.aba === "telaUsuarios") carregarUsuarios(); if (b.dataset.aba === "telaCamera") abrirCamera(); });
+$$("nav.barra button").forEach(b => b.onclick = () => { mostrarTela(b.dataset.aba); if (b.dataset.aba === "telaDespesas") { carregarDespesas(); if (perfil?.papel === "gestor") conciliarCaixa(); } if (b.dataset.aba === "telaCarteira") carregarSaldos(); if (b.dataset.aba === "telaUsuarios") carregarUsuarios(); if (b.dataset.aba === "telaCamera") abrirCamera(); });
 
 // ---------------- Login ----------------
 const DOMINIO_USUARIOS = "areialimpa.local";
@@ -726,6 +751,8 @@ async function carregarPerfil() {
   $("navUsuarios").classList.toggle("oculto", !gestor);
   aplicarPermissoes();
   $("navCamera").classList.toggle("oculto", !pode("importar_lpr"));
+  $("cartaoExtrato").classList.toggle("oculto", !gestor);
+  document.querySelector('nav.barra button[data-aba="telaDespesas"]').lastChild.textContent = gestor ? "Financeiro" : "Despesas";
   document.querySelector("nav.barra .in").style.gridTemplateColumns = `repeat(${[...document.querySelectorAll("nav.barra .in button")].filter(b => !b.classList.contains("oculto")).length}, 1fr)`;
   mostrarTela("telaCargas");
   $("quando").value = agoraLocal();
@@ -1529,6 +1556,261 @@ async function conferirLpr() {
   } catch (e) { $("lprConf").innerHTML = ""; msg("lprConf", traduzir(e)); }
 }
 $("btnConferirLpr").onclick = conferirLpr;
+
+// ---------------- EXTRATO BANCÁRIO / CONCILIAÇÃO DE CAIXA ----------------
+let extratoArquivo = null;   // { nome, linhas: [{data, valor, descricao, tipo, ignorar, chave, bruto}] }
+function carregarScript(src) {
+  return new Promise((ok, erro) => {
+    if (document.querySelector(`script[src="${src}"]`)) return ok();
+    const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => erro(new Error("Não foi possível carregar o leitor do arquivo. Verifique a internet."));
+    document.head.appendChild(s);
+  });
+}
+/** "1.234,56" / "-1.234,56" / "1234.56" / "350,00 C" / "(50,00)" / "50,00 D" -> número com sinal */
+function valorExtrato(t) {
+  if (typeof t === "number") return t;
+  let s = String(t ?? "").replace(/R\$|\s| /g, "").toUpperCase();
+  if (!s) return NaN;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  if (/D$/.test(s)) { neg = true; s = s.slice(0, -1); } else if (/C$/.test(s)) s = s.slice(0, -1);
+  if (s.startsWith("-")) { neg = true; s = s.slice(1); } else if (s.startsWith("+")) s = s.slice(1);
+  if (s.endsWith("-")) { neg = true; s = s.slice(0, -1); }
+  if (!/^[\d.,]+$/.test(s)) return NaN;
+  const iv = s.lastIndexOf(","), ip = s.lastIndexOf(".");
+  if (iv >= 0 && ip >= 0) s = iv > ip ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+  else if (iv >= 0) s = s.replace(/\./g, "").replace(",", ".");
+  else if (ip >= 0 && !/\.\d{1,2}$/.test(s)) s = s.replace(/\./g, "");
+  const v = parseFloat(s);
+  return neg ? -v : v;
+}
+/** Data em vários formatos -> "AAAA-MM-DD" */
+function dataExtrato(t, anoPadrao) {
+  if (t instanceof Date && !isNaN(t)) return new Date(t.getTime() - t.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+  const s = String(t ?? "").trim();
+  let m;
+  if ((m = s.match(/^(\d{4})(\d{2})(\d{2})/))) return `${m[1]}-${m[2]}-${m[3]}`;                          // OFX 20260930...
+  if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return `${m[1]}-${m[2]}-${m[3]}`;
+  if ((m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})\b/))) {
+    const ano = m[3].length === 2 ? "20" + m[3] : m[3];
+    return `${ano}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  }
+  if (anoPadrao && (m = s.match(/^(\d{1,2})\/(\d{1,2})\b/))) return `${anoPadrao}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return null;
+}
+function tipoPorDescricao(d) {
+  const s = semAcento(d).toUpperCase();
+  if (/\bPIX\b/.test(s)) return "pix";
+  if (/CARTAO|CREDITO|DEBITO|MAQUIN|CIELO|REDECARD|\bREDE\b|GETNET|STONE|PAGSEGURO|PAGBANK|SUMUP|SAFRAPAY|MERCADO ?PAGO|VENDAS? |ANTECIP|LIQUIDACAO|\bVISA\b|MASTER|\bELO\b|HIPERCARD|AMEX|POS\b/.test(s)) return "cartao";
+  return "outro";
+}
+const ehSaldo = (d) => /\bSALDO\b|S A L D O|SDO\b/i.test(semAcento(d));
+/** Dá uma chave estável por lançamento (mesmo dia, valor e descrição repetidos recebem #2, #3...) */
+function chavesExtrato(linhas, prefixo) {
+  const cont = {};
+  for (const l of linhas) {
+    const base = `${prefixo}|${l.data}|${l.valor.toFixed(2)}|${normalizar(l.descricao)}`;
+    cont[base] = (cont[base] || 0) + 1;
+    l.chave = l.fitid ? `ofx|${l.conta || ""}|${l.fitid}|${l.data}|${l.valor.toFixed(2)}` : `${base}#${cont[base]}`;
+  }
+  return linhas;
+}
+function lerOFX(texto) {
+  const conta = (texto.match(/<ACCTID>([^<\r\n]+)/i) || [])[1] || "";
+  const blocos = texto.split(/<STMTTRN>/i).slice(1);
+  const campo = (b, tag) => ((b.match(new RegExp(`<${tag}>([^<\\r\\n]*)`, "i")) || [])[1] || "").trim();
+  const linhas = blocos.map(b => ({
+    data: dataExtrato(campo(b, "DTPOSTED")), valor: valorExtrato(campo(b, "TRNAMT")),
+    descricao: [campo(b, "NAME"), campo(b, "MEMO")].filter(Boolean).join(" · ") || campo(b, "TRNTYPE"),
+    fitid: campo(b, "FITID"), conta, bruto: { tipo: campo(b, "TRNTYPE"), fitid: campo(b, "FITID"), memo: campo(b, "MEMO"), nome: campo(b, "NAME") },
+  }));
+  return chavesExtrato(linhas.filter(l => l.data && isFinite(l.valor)), "ofx");
+}
+/** Tabela (CSV ou Excel) -> lançamentos, procurando as colunas pelo nome */
+function lerTabela(rows) {
+  const norm = (c) => semAcento(String(c ?? ""));
+  let iCab = rows.findIndex((r, i) => i < 40 && r.some(c => /^data/.test(norm(c))) && r.some(c => /valor|credito|entrada/.test(norm(c))));
+  if (iCab < 0) throw new Error("Não encontrei as colunas de data e valor no extrato. Me envie um exemplo para ajustar.");
+  const cab = rows[iCab].map(norm);
+  const achar = (rx, exceto) => cab.findIndex(c => rx.test(c) && !(exceto && exceto.test(c)));
+  const iData = achar(/^data/, /balancete/), iDesc = achar(/historico|descricao|lancamento|memo|detalhe|titulo|complemento/);
+  const iCred = achar(/credito|entrada/, /debito/), iDeb = achar(/debito|saida/);
+  const iValor = achar(/^valor|valor \(r\$\)|^montante|^quantia/, /saldo/);
+  const iDC = achar(/^d\/c$|^c\/d$|^natureza|^tipo$|^sinal/);
+  const linhas = [];
+  for (const r of rows.slice(iCab + 1)) {
+    const data = dataExtrato(r[iData]);
+    if (!data) continue;
+    const descricao = String(iDesc >= 0 ? r[iDesc] ?? "" : "").trim();
+    if (ehSaldo(descricao)) continue;
+    let valor;
+    if (iCred >= 0 && String(r[iCred] ?? "").trim() !== "") valor = Math.abs(valorExtrato(r[iCred]));
+    else if (iDeb >= 0 && String(r[iDeb] ?? "").trim() !== "") valor = -Math.abs(valorExtrato(r[iDeb]));
+    else if (iValor >= 0) {
+      valor = valorExtrato(r[iValor]);
+      if (iDC >= 0 && /^D/i.test(String(r[iDC] ?? "").trim())) valor = -Math.abs(valor);
+    }
+    if (!isFinite(valor)) continue;
+    linhas.push({ data, valor, descricao, bruto: Object.fromEntries(rows[iCab].map((k, i) => [String(k ?? i), r[i] ?? ""])) });
+  }
+  return chavesExtrato(linhas, "tab");
+}
+function lerCSVExtrato(texto) {
+  const ls = texto.replace(/^﻿/, "").split(/\r?\n/).filter(l => l.trim());
+  const amostra = ls.slice(0, 15).join("\n");
+  const sep = [";", "\t", ","].sort((a, b) => amostra.split(b).length - amostra.split(a).length)[0];
+  return lerTabela(ls.map(l => dividirCSV(l, sep)));
+}
+async function lerExcel(buf) {
+  await carregarScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  let erro;
+  for (const nome of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, raw: true, defval: "" });
+    try { return lerTabela(rows); } catch (e) { erro = e; }
+  }
+  throw erro || new Error("Planilha vazia.");
+}
+async function lerPDF(buf) {
+  await carregarScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const linhasTexto = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const itens = (await (await pdf.getPage(p)).getTextContent()).items.filter(i => i.str.trim());
+    const porY = {};
+    for (const it of itens) { const y = Math.round(it.transform[5] / 3) * 3; (porY[y] ||= []).push(it); }
+    Object.keys(porY).map(Number).sort((a, b) => b - a)
+      .forEach(y => linhasTexto.push(porY[y].sort((a, b) => a.transform[4] - b.transform[4]).map(i => i.str.trim()).join(" ")));
+  }
+  const ano = ((linhasTexto.join(" ").match(/\b\d{1,2}\/\d{1,2}\/(\d{4})\b/) || [])[1]) || String(new Date().getFullYear());
+  const dinheiro = /[-+]?\(?\d{1,3}(?:\.\d{3})*,\d{2}\)?(?:\s?[CD-])?(?=\s|$)/g;
+  const linhas = []; let ultimaData = null;
+  for (const t of linhasTexto) {
+    const d = dataExtrato(t, ano);
+    if (d) ultimaData = d;
+    if (!ultimaData || ehSaldo(t)) continue;
+    const valores = t.match(dinheiro);
+    if (!valores) continue;
+    const descricao = t.replace(/^\d{1,2}\/\d{1,2}(\/\d{2,4})?\s*/, "").replace(dinheiro, "").replace(/\s+/g, " ").trim();
+    if (!descricao) continue;
+    // com duas colunas de valor (lançamento e saldo), o lançamento é o primeiro
+    linhas.push({ data: ultimaData, valor: valorExtrato(valores[0]), descricao, bruto: { linha: t } });
+  }
+  if (!linhas.length) throw new Error("Não consegui ler lançamentos neste PDF. Se possível, baixe o extrato em OFX ou Excel.");
+  return chavesExtrato(linhas.filter(l => isFinite(l.valor)), "pdf");
+}
+$("arqExtrato").onchange = async () => {
+  const f = $("arqExtrato").files[0];
+  $("previaExtrato").classList.add("oculto"); msg("msgExtrato", ""); extratoArquivo = null;
+  if (!f) return;
+  try {
+    msg("msgExtrato", "Lendo o extrato…", "aviso");
+    const ext = (f.name.split(".").pop() || "").toLowerCase();
+    const buf = await f.arrayBuffer();
+    let texto = () => { const t = new TextDecoder("utf-8").decode(buf); return t.includes("�") ? new TextDecoder("windows-1252").decode(buf) : t; };
+    let todas;
+    if (ext === "pdf") todas = await lerPDF(buf);
+    else if (ext === "xls" || ext === "xlsx") todas = await lerExcel(buf);
+    else if (ext === "ofx" || ext === "qfx" || /<OFX>|<STMTTRN>/i.test(texto())) todas = lerOFX(texto());
+    else todas = lerCSVExtrato(texto());
+    const entradas = todas.filter(l => l.valor > 0.004);
+    if (!entradas.length) throw new Error(`Li ${todas.length} lançamento(s), mas nenhuma entrada (crédito) no extrato.`);
+    entradas.forEach(l => { l.tipo = tipoPorDescricao(l.descricao); l.ignorar = l.tipo === "outro"; });
+    entradas.sort((a, b) => a.data.localeCompare(b.data));
+    extratoArquivo = { nome: f.name, linhas: entradas };
+    const soma = (t) => entradas.filter(l => l.tipo === t).reduce((s, l) => s + l.valor, 0);
+    $("extratoResumo").innerHTML = [
+      ["Período", `${dataBR(entradas[0].data)} a ${dataBR(entradas[entradas.length - 1].data)}`], ["Entradas", entradas.length],
+      ["Pix", moeda(soma("pix"))], ["Cartão", moeda(soma("cartao"))],
+      ["Outras entradas", moeda(soma("outro"))], ["Saídas (não usadas)", todas.length - entradas.length],
+    ].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("");
+    $("extratoLinhas").innerHTML = entradas.map((l, i) => `<tr data-i="${i}"><td>${dataBR(l.data)}</td><td>${esc(l.descricao)}</td><td class="num">${moeda(l.valor)}</td>
+      <td><select>${[["pix", "Pix"], ["cartao", "Cartão"], ["outro", "Outro"]].map(([v, n]) => `<option value="${v}" ${l.tipo === v ? "selected" : ""}>${n}</option>`).join("")}</select></td>
+      <td style="text-align:center"><input type="checkbox" ${l.ignorar ? "checked" : ""} style="width:auto;margin:0"></td></tr>`).join("");
+    $$("#extratoLinhas tr").forEach(tr => {
+      const l = entradas[tr.dataset.i], sel = tr.querySelector("select"), chk = tr.querySelector("input");
+      sel.onchange = () => { l.tipo = sel.value; if (sel.value !== "outro") { l.ignorar = false; chk.checked = false; } };
+      chk.onchange = () => { l.ignorar = chk.checked; };
+    });
+    $("previaExtrato").classList.remove("oculto");
+    msg("msgExtrato", "");
+  } catch (e) { msg("msgExtrato", traduzir(e)); }
+};
+$("btnSalvarExtrato").onclick = async () => {
+  if (!extratoArquivo) return;
+  const linhas = extratoArquivo.linhas.map(l => ({ data: l.data, valor: Math.round(l.valor * 100) / 100, descricao: l.descricao, tipo: l.tipo, chave: l.chave, bruto: l.bruto }));
+  $("btnSalvarExtrato").disabled = true;
+  try {
+    let novas = 0, rep = 0;
+    for (let i = 0; i < linhas.length; i += 500) {
+      const { data, error } = await db.rpc("importar_extrato", { linhas: linhas.slice(i, i + 500), arquivo: extratoArquivo.nome });
+      if (error) throw error;
+      novas += data.novas; rep += data.repetidas;
+    }
+    // marcações de "ignorar" escolhidas na prévia
+    const ign = extratoArquivo.linhas.filter(l => l.ignorar).map(l => l.chave);
+    for (let i = 0; i < ign.length; i += 200) await db.from("extrato_bancario").update({ ignorar: true }).in("chave", ign.slice(i, i + 200));
+    msg("msgExtrato", `Extrato salvo: <b>${novas}</b> entradas novas${rep ? ` · ${rep} já estavam no sistema` : ""}.`, "ok");
+    $("mesConc").value = extratoArquivo.linhas[extratoArquivo.linhas.length - 1].data.slice(0, 7);
+    $("previaExtrato").classList.add("oculto"); $("arqExtrato").value = ""; extratoArquivo = null;
+    conciliarCaixa();
+  } catch (e) { msg("msgExtrato", traduzir(e)); }
+  finally { $("btnSalvarExtrato").disabled = false; }
+};
+async function conciliarCaixa() {
+  const mes = $("mesConc").value || hojeISO().slice(0, 7);
+  $("mesConc").value = mes;
+  const de = mes + "-01", fim = new Date(+mes.slice(0, 4), +mes.slice(5, 7), 0).getDate();
+  const ate = [`${mes}-${String(fim).padStart(2, "0")}`, hojeISO()].sort()[0];
+  if (de > ate) return msg("concResultado", "Escolha um mês até o atual.");
+  $("concResultado").innerHTML = '<div class="vazio">Conferindo…</div>';
+  try {
+    const [{ data: dias, error }, { data: lanc, error: e2 }] = await Promise.all([
+      db.rpc("conciliacao_caixa", { de, ate }),
+      db.from("extrato_bancario").select("id,data,valor,descricao,tipo,ignorar").gte("data", de).lte("data", ate).order("data"),
+    ]);
+    if (error) throw error; if (e2) throw e2;
+    const n = (v) => Number(v) || 0;
+    const T = dias.reduce((t, d) => { for (const k of ["sist_pix", "sist_cartao", "sist_dinheiro", "banco_pix", "banco_cartao", "banco_outros"]) t[k] = (t[k] || 0) + n(d[k]); return t; }, {});
+    const caixa = (d) => n(d.sist_pix) + n(d.sist_cartao) + n(d.sist_dinheiro);
+    const conferido = (d) => n(d.banco_pix) + n(d.banco_cartao) + n(d.sist_dinheiro);
+    const dif = (v) => `<span class="dif ${Math.abs(v) < 0.01 ? "ent" : "sai"}">${Math.abs(v) < 0.01 ? "✓" : (v > 0 ? "+ " : "− ") + moeda(Math.abs(v))}</span>`;
+    const temExtrato = (lanc || []).length > 0;
+    let html = `<div class="caixa" style="margin-top:10px">
+      <div><span>Caixa das vendas</span><b>${moeda(caixa(T))}</b></div>
+      <div><span>Total conferido</span><b>${moeda(conferido(T))}</b></div>
+      <div><span>Pix no banco</span><b>${moeda(T.banco_pix)}</b></div>
+      <div><span>Cartão no banco</span><b>${moeda(T.banco_cartao)}</b></div>
+      <div><span>Dinheiro (espécie)</span><b>${moeda(T.sist_dinheiro)}</b></div>
+      <div><span>Diferença</span><b>${dif(conferido(T) - caixa(T))}</b></div></div>
+      <div class="sub" style="margin-top:6px">Total conferido = Pix e cartão que caíram no banco + dinheiro em espécie. No cartão, a diferença costuma ser a taxa da maquininha ou o prazo de repasse (crédito cai depois).</div>`;
+    if (!temExtrato) html += '<div class="vazio">Nenhum extrato enviado para este mês.</div>';
+    for (const d of dias.slice().reverse()) {
+      if (caixa(d) + n(d.banco_pix) + n(d.banco_cartao) + n(d.banco_outros) < 0.01) continue;
+      html += `<div class="conf-dia"><h3><span>${new Date(d.dia + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
+          <span class="sub">caixa ${moeda(caixa(d))} · conferido ${moeda(conferido(d))} ${dif(conferido(d) - caixa(d))}</span></h3>
+        <div class="conc-linha"><span>Pix: vendas ${moeda(d.sist_pix)} · banco ${moeda(d.banco_pix)}</span>${dif(n(d.banco_pix) - n(d.sist_pix))}</div>
+        <div class="conc-linha"><span>Cartão: vendas ${moeda(d.sist_cartao)} · banco ${moeda(d.banco_cartao)}</span>${dif(n(d.banco_cartao) - n(d.sist_cartao))}</div>
+        <div class="conc-linha"><span>Dinheiro em espécie</span><b>${moeda(d.sist_dinheiro)}</b></div>
+        ${n(d.banco_outros) ? `<div class="conc-linha"><span>Outras entradas no banco (não somadas)</span><span>${moeda(d.banco_outros)}</span></div>` : ""}</div>`;
+    }
+    if (temExtrato) html += `<details style="margin-top:12px"><summary class="sub">Lançamentos do extrato no mês (${lanc.length}) — toque para revisar tipo / ignorar</summary>
+      <div class="rolagem"><table><tbody>${lanc.map(l => `<tr data-id="${l.id}"><td>${dataBR(l.data)}</td><td>${esc(l.descricao)}</td><td class="num">${moeda(l.valor)}</td>
+        <td><select>${[["pix", "Pix"], ["cartao", "Cartão"], ["outro", "Outro"]].map(([v, nm]) => `<option value="${v}" ${l.tipo === v ? "selected" : ""}>${nm}</option>`).join("")}</select></td>
+        <td><label style="display:flex;gap:4px;align-items:center;margin:0;font-weight:400"><input type="checkbox" ${l.ignorar ? "checked" : ""} style="width:auto;margin:0">ignorar</label></td></tr>`).join("")}</tbody></table></div></details>`;
+    $("concResultado").innerHTML = html;
+    $$("#concResultado tr[data-id]").forEach(tr => {
+      const salvar = async () => {
+        const { error } = await db.from("extrato_bancario").update({ tipo: tr.querySelector("select").value, ignorar: tr.querySelector("input").checked }).eq("id", tr.dataset.id);
+        if (error) return alert(traduzir(error));
+        conciliarCaixa();
+      };
+      tr.querySelector("select").onchange = salvar; tr.querySelector("input").onchange = salvar;
+    });
+  } catch (e) { $("concResultado").innerHTML = ""; msg("concResultado", traduzir(e)); }
+}
+$("btnConciliar").onclick = conciliarCaixa;
 
 // ---------------- PAINEL (dashboard) ----------------
 const diaLocal = (d) => { const x = new Date(d); return new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
