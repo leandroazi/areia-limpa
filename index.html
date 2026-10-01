@@ -490,6 +490,12 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       </table>
       <div id="msgUsuarios"></div>
     </div>
+    <div class="cartao">
+      <h2>Cópia de segurança</h2>
+      <div class="sub">O servidor guarda uma cópia completa automaticamente a cada 6 horas (por 180 dias). Para ter também uma cópia fora do servidor, baixe o arquivo e guarde no OneDrive, Google Drive ou pendrive — de preferência toda semana.</div>
+      <button class="btn sec" id="btnBaixarBackup" type="button">Baixar cópia de segurança</button>
+      <div id="msgBackup"></div>
+    </div>
   </section>
 
   <div id="rodape" class="oculto" style="text-align:center">
@@ -1811,6 +1817,21 @@ async function conciliarCaixa() {
   } catch (e) { $("concResultado").innerHTML = ""; msg("concResultado", traduzir(e)); }
 }
 $("btnConciliar").onclick = conciliarCaixa;
+
+$("btnBaixarBackup").onclick = async () => {
+  $("btnBaixarBackup").disabled = true; msg("msgBackup", "Preparando a cópia…", "aviso");
+  try {
+    const { data, error } = await db.rpc("backup_completo");
+    if (error) throw error;
+    const nome = `areia-limpa-backup-${hojeISO()}.json`;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+    const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    const resumo = ["veiculos", "carregamentos", "creditos_antecipados", "despesas", "leituras_lpr"].map(t => `${(data[t] || []).length} ${t.replace("_antecipados", "").replace("_lpr", "")}`).join(" · ");
+    msg("msgBackup", `Arquivo <b>${nome}</b> baixado (${resumo}).`, "ok");
+  } catch (e) { msg("msgBackup", traduzir(e)); }
+  finally { $("btnBaixarBackup").disabled = false; }
+};
 
 // ---------------- PAINEL (dashboard) ----------------
 const diaLocal = (d) => { const x = new Date(d); return new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
