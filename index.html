@@ -243,7 +243,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
   <!-- ===================== PENDENTE ===================== -->
   <section id="telaPendente" class="cartao oculto">
     <h2>Aguardando aprovação</h2>
-    <p>Seu acesso foi criado. Peça ao gestor para aprovar no app (Mais › Usuários).</p>
+    <p>Seu acesso foi criado. Peça ao gestor master para liberar o seu acesso em Usuários.</p>
     <button class="btn" id="btnVerificar" type="button">Já fui aprovada</button>
     <button class="link" data-sair type="button">Sair</button>
   </section>
@@ -537,9 +537,13 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 
   <!-- ===================== USUÁRIOS (só gestor) ===================== -->
   <section id="telaUsuarios" class="aba oculto">
+    <div class="cartao oculto" id="cartaoSoMaster">
+      <h2>Usuários</h2>
+      <div class="sub">Somente o <b>gestor master</b> cria e administra os acessos. Peça a ele para criar, bloquear ou mudar um usuário.</div>
+    </div>
     <form id="formNovoUsuario" class="cartao" autocomplete="off">
       <h2>Criar acesso</h2>
-      <div class="sub">Só você (gestor) cria os acessos. A pessoa entra com o <b>usuário</b> e a <b>senha</b> que você definir aqui.</div>
+      <div class="sub">Só o gestor master cria os acessos. A pessoa entra com o <b>usuário</b> e a <b>senha</b> que você definir aqui.</div>
       <label for="nuNome">Nome</label>
       <input id="nuNome" type="text" maxlength="80" required placeholder="Ex.: Maria (secretária)">
       <div class="linha2">
@@ -550,6 +554,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       <div class="radio">
         <label><input type="radio" name="nuPapel" value="secretaria" checked> Secretária</label>
         <label><input type="radio" name="nuPapel" value="gestor"> Gestor</label>
+        <label><input type="radio" name="nuPapel" value="master"> Gestor master</label>
       </div>
       <div id="nuPermsBox"><label>Atribuições</label>
       <div id="nuPerms"><div class="perms">
@@ -566,11 +571,11 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
         <label><input type="checkbox" data-perm="alterar_despesas"> Alterar / excluir despesas</label>
         <label><input type="checkbox" data-perm="alterar_veiculos"> Alterar veículos</label>
       </div></div></div>
-      <div class="sub" id="nuGestorInfo" style="margin-top:6px" hidden>Gestor tem todas as atribuições.</div>
+      <div class="sub" id="nuGestorInfo" style="margin-top:6px" hidden>Gestor tem todas as atribuições. O gestor master, além disso, administra os usuários.</div>
       <button class="btn" id="btnNovoUsuario" type="submit">Criar acesso</button>
       <div id="msgNovoUsuario"></div>
     </form>
-    <div class="cartao">
+    <div class="cartao" id="cartaoAcessos">
       <div class="topo"><h2>Acessos</h2><button class="link" id="btnAtualizarUsuarios" type="button">Atualizar</button></div>
       <table>
         <thead><tr><th>Nome</th><th>Usuário</th><th>Papel</th><th></th></tr></thead>
@@ -663,6 +668,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
     <div class="radio">
       <label><input type="radio" name="duPapel" value="secretaria"> Secretária</label>
       <label><input type="radio" name="duPapel" value="gestor"> Gestor</label>
+      <label><input type="radio" name="duPapel" value="master"> Gestor master</label>
     </div>
     <button class="btn sec" id="btnDuPapel" type="button">Salvar papel</button>
     <div id="duPermsBox"><label>Atribuições</label>
@@ -802,7 +808,7 @@ function mostrarTela(t) {
   $("titulo").textContent = TITULOS[t] || "Areia Limpa";
   if (logado) window.scrollTo(0, 0);
 }
-$$("nav.barra button").forEach(b => b.onclick = () => { mostrarTela(b.dataset.aba); if (b.dataset.aba === "telaDespesas") { carregarDespesas(); if (perfil?.papel === "gestor") conciliarCaixa(); } if (b.dataset.aba === "telaCarteira") carregarSaldos(); if (b.dataset.aba === "telaUsuarios") carregarUsuarios(); if (b.dataset.aba === "telaCamera") abrirCamera(); });
+$$("nav.barra button").forEach(b => b.onclick = () => { mostrarTela(b.dataset.aba); if (b.dataset.aba === "telaDespesas") { carregarDespesas(); if (perfil?.papel === "gestor") conciliarCaixa(); } if (b.dataset.aba === "telaCarteira") carregarSaldos(); if (b.dataset.aba === "telaUsuarios" && perfil?.master) carregarUsuarios(); if (b.dataset.aba === "telaCamera") abrirCamera(); });
 
 // ---------------- Login ----------------
 const DOMINIO_USUARIOS = "areialimpa.local";
@@ -830,7 +836,7 @@ try {
 } catch {}
 $("btnEsqueci").onclick = async () => {
   const email = $("email").value.trim();
-  if (!email.includes("@")) return msg("msgLogin", "Esqueceu a senha? Peça ao gestor para criar uma nova para você.", "aviso");
+  if (!email.includes("@")) return msg("msgLogin", "Esqueceu a senha? Peça ao gestor master para criar uma nova para você.", "aviso");
   const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
   msg("msgLogin", error ? traduzir(error) : "Se o e-mail estiver cadastrado, você receberá um link para criar nova senha.", error ? "erro" : "ok");
 };
@@ -854,14 +860,18 @@ db.auth.onAuthStateChange((ev, sessao) => {
 
 async function carregarPerfil() {
   if (!usuario) return;
-  const { data, error } = await db.from("perfis").select("nome,papel,permissoes").eq("id", usuario.id).maybeSingle();
+  const { data, error } = await db.from("perfis").select("nome,papel,master,permissoes").eq("id", usuario.id).maybeSingle();
   if (error) { mostrarTela("telaLogin"); return msg("msgLogin", traduzir(error)); }
   perfil = data || { papel: "pendente", nome: "" };
   if (perfil.papel === "pendente") return mostrarTela("telaPendente");
   $("ola").textContent = `Olá, ${perfil.nome || usuario.email}`;
   $("tituloDespesas").textContent = perfil.papel === "gestor" ? "Despesas lançadas" : "Despesas lançadas por você";
   const gestor = perfil.papel === "gestor";
+  const master = gestor && !!perfil.master;
   $("navUsuarios").classList.toggle("oculto", !gestor);
+  // só o gestor master administra usuários; o gestor comum vê apenas a cópia de segurança nesta aba
+  ["formNovoUsuario", "cartaoAcessos"].forEach(id => $(id).classList.toggle("oculto", !master));
+  $("cartaoSoMaster").classList.toggle("oculto", master);
   aplicarPermissoes();
   $("navCamera").classList.toggle("oculto", !pode("importar_lpr"));
   $("cartaoExtrato").classList.toggle("oculto", !gestor);
@@ -1559,8 +1569,9 @@ setInterval(() => { if (perfil && perfil.papel !== "pendente") carregarDash(); }
 let usuarios = [], usuarioEditando = null;
 const lerPerms = (id) => Object.fromEntries([...$(id).querySelectorAll("[data-perm]")].map(c => [c.dataset.perm, c.checked]));
 const marcarPerms = (id, p) => $(id).querySelectorAll("[data-perm]").forEach(c => c.checked = !!(p && p[c.dataset.perm]));
+const nomePapel = (u) => u.papel === "gestor" ? (u.master ? "Gestor master" : "Gestor") : u.papel === "secretaria" ? "Secretária" : "Aguardando";
 $$("input[name=nuPapel]").forEach(r => r.onchange = () => {
-  const g = document.querySelector("input[name=nuPapel]:checked").value === "gestor";
+  const g = document.querySelector("input[name=nuPapel]:checked").value !== "secretaria";
   $("nuPermsBox").hidden = g; $("nuGestorInfo").hidden = !g;
 });
 async function gerenciar(corpo) {
@@ -1591,17 +1602,18 @@ async function carregarUsuarios() {
     $("tabelaUsuarios").innerHTML = usuarios.map(u => `<tr data-id="${u.id}" style="cursor:pointer">
       <td>${esc(u.nome || "—")}${u.id === eu ? ' <span class="tag ouro">você</span>' : ""}</td>
       <td class="pl">${esc(u.usuario || (u.email || "").split("@")[0])}</td>
-      <td>${u.papel === "gestor" ? "Gestor" : u.papel === "secretaria" ? "Secretária" : "Aguardando"}</td>
+      <td>${nomePapel(u)}</td>
       <td>${u.ativo === false ? '<span class="tag bloq">Bloqueado</span>' : '<span class="tag ok">Ativo</span>'}</td></tr>`).join("")
       + excluidos.map(u => `<tr class="excluido" title="Acesso excluído — o histórico de lançamentos continua registrado">
       <td>${esc(u.nome || "—")}</td>
       <td class="pl">${esc(u.usuario_original || (u.email || "").split("@")[0])}</td>
-      <td>${u.papel === "gestor" ? "Gestor" : "Secretária"}</td>
+      <td>${nomePapel(u)}</td>
       <td><span class="tag">Excluído ${new Date(u.excluido_em).toLocaleDateString("pt-BR")}</span></td></tr>`).join("");
     $$("#tabelaUsuarios tr[data-id]").forEach(tr => tr.onclick = () => abrirUsuario(usuarios.find(x => x.id === tr.dataset.id)));
   } catch (e) { msg("msgUsuarios", traduzir(e)); }
 }
 $("btnAtualizarUsuarios").onclick = carregarUsuarios;
+$$("input[name=duPapel]").forEach(r => r.onchange = () => { $("duPermsBox").hidden = r.value !== "secretaria"; });
 $("formNovoUsuario").onsubmit = async (ev) => {
   ev.preventDefault();
   const u = $("nuUsuario").value.trim().toLowerCase();
@@ -1622,7 +1634,7 @@ function abrirUsuario(u) {
   $("tituloUsuario").textContent = u.nome || "Acesso";
   $("infoUsuario").innerHTML = `Usuário: <b>${esc(u.usuario || u.email)}</b> · ${u.ativo === false ? "bloqueado" : "ativo"}`;
   $("duSenha").value = "";
-  $$("input[name=duPapel]").forEach(r => { r.checked = r.value === u.papel; r.disabled = eu; });
+  $$("input[name=duPapel]").forEach(r => { r.checked = r.value === (u.papel === "gestor" && u.master ? "master" : u.papel); r.disabled = eu; });
   $("btnDuPapel").classList.toggle("oculto", eu);
   $("duPermsBox").hidden = u.papel === "gestor";
   marcarPerms("duPerms", u.permissoes);
