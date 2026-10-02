@@ -173,6 +173,13 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 .conc-linha { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 3px 0; }
 .conc-linha .dif { font-weight: 700; }
 .formas.formas2 { grid-template-columns: 1fr 1fr; }
+.acoesCaixa { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+.acoesCaixa .btn { margin: 0; padding: 12px 8px; font-size: 14px; }
+.acoesCaixa .btn.oculto + .btn { grid-column: auto; }
+.hist-caixa { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--suave); font-size: 13px; cursor: pointer; }
+.hist-caixa:hover { background: var(--suave); }
+.parecida { margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.parecida button { width: auto; margin: 0; padding: 8px 12px; font-size: 13px; }
 .mapa { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; margin-top: 6px; font-size: 13px; }
 .mapa select { margin: 0; padding: 6px 8px; font-size: 13px; }
 .inc-item { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--suave); font-size: 13px; cursor: pointer; }
@@ -271,8 +278,15 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
         <div><label for="caixaDia">Dia do caixa</label><input id="caixaDia" type="date"></div>
         <div><button class="btn sec" id="btnImprimirCaixa" type="button" style="margin-top:0">Imprimir relatório</button></div>
       </div>
+      <div id="caixaStatus"></div>
       <div class="caixa" id="caixaFormas"></div>
       <div class="sub" id="caixaNotas" style="margin-top:8px"></div>
+      <div class="acoesCaixa naoImprimir">
+        <button class="btn" id="btnFecharCaixa" type="button">Fechar caixa</button>
+        <button class="btn sec" id="btnPdfCaixa" type="button">Baixar PDF</button>
+        <button class="btn sec" id="btnExcelCaixa" type="button">Baixar Excel</button>
+      </div>
+      <div id="msgCaixa" class="naoImprimir"></div>
       <div id="caixaAlteracoes"></div>
       <h2 style="margin-top:14px">Vendas do dia</h2>
       <table>
@@ -280,6 +294,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
         <tbody id="caixaVendas"></tbody>
       </table>
       <div id="caixaDepositos"></div>
+      <div id="caixaHistorico" class="naoImprimir"></div>
       <button class="link naoImprimir" type="button" data-fechar="cartaoCaixa">Fechar</button>
     </div>
 
@@ -300,6 +315,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
         <label><input type="radio" name="material" value="areia_suja">Areia suja</label>
       </div>
       <label>Caçamba</label>
+      <div class="info ok oculto" id="porteCadastro"></div>
       <div class="formas formas2" id="portes">
         <label><input type="radio" name="porte" value="truck" checked>Truck</label>
         <label><input type="radio" name="porte" value="toco">Toco</label>
@@ -969,10 +985,11 @@ function calcularCaixa(cargas, deps) {
 const CAMPOS_VENDA = "id,data,placa,valor,forma_pagamento,forma_complemento,valor_carteira,observacao,produto,porte";
 function intervaloDia(iso) { const ini = new Date(iso + "T00:00:00"), fim = new Date(ini); fim.setDate(fim.getDate() + 1); return [ini.toISOString(), fim.toISOString()]; }
 let vendasPorId = {}, depositosPorId = {}, despesasPorId = {};
-function linhaVenda(r, comValor) {
+function linhaVenda(r, comValor, fechado) {
   vendasPorId[r.id] = r;
   const vc = Number(r.valor_carteira || 0), rec = Number(r.valor) - vc;
-  const acao = pode("alterar_vendas") ? `<button type="button" class="acaoLinha" data-alterar-venda="${r.id}">Alterar</button>` : "";
+  // caixa fechado: só o gestor altera (a secretária apenas consulta)
+  const acao = pode("alterar_vendas") && (!fechado || perfil?.papel === "gestor") ? `<button type="button" class="acaoLinha" data-alterar-venda="${r.id}">Alterar</button>` : "";
   const mat = r.produto === "areia_suja" ? ' <span class="tag cin">suja</span>' : "";
   return `<tr><td>${hora(r.data)}</td><td class="pl">${esc(r.placa)}${mat}</td><td>${esc(nomeCliente(veiculoDe(r.placa)))}</td>
     <td>${vc > 0 ? `<span class="tag ouro">${descPagamento(r)}</span>` : `<span class="tag cin">${descPagamento(r)}</span>`}</td>
@@ -985,15 +1002,17 @@ function ligarAcoes(raiz) {
 }
 async function carregarHoje() {
   const [ini, fim] = intervaloDia(hojeISO());
-  const [c, d] = await Promise.all([
+  const [c, d, f] = await Promise.all([
     db.from("carregamentos").select(CAMPOS_VENDA).gte("data", ini).lt("data", fim).order("data", { ascending: false }),
     db.from("creditos_antecipados").select("valor_pago,forma_pagamento").eq("data", hojeISO()),
+    db.from("caixa_fechamentos").select("dia").eq("dia", hojeISO()).maybeSingle(),
   ]);
   if (c.error) return;
   const data = c.data || [];
+  hojeFechado = !!f.data;
   $("totalHoje").textContent = data.length;
   $("vazioHoje").classList.toggle("oculto", data.length > 0);
-  $("tabelaHoje").innerHTML = data.map(r => linhaVenda(r, false)).join("");
+  $("tabelaHoje").innerHTML = data.map(r => linhaVenda(r, false, hojeFechado)).join("");
   ligarAcoes($("tabelaHoje"));
   $("caixaMini").textContent = moeda(calcularCaixa(data, d.data || []).total);
   if (!$("cartaoCaixa").classList.contains("oculto") && $("caixaDia").value === hojeISO()) carregarCaixa();
@@ -1002,13 +1021,26 @@ async function carregarHoje() {
 async function carregarCaixa() {
   const dia = $("caixaDia").value || hojeISO();
   const [ini, fim] = intervaloDia(dia);
-  const [c, d, a] = await Promise.all([
+  const [c, d, a, f, h] = await Promise.all([
     db.from("carregamentos").select(CAMPOS_VENDA).gte("data", ini).lt("data", fim).order("data"),
     db.from("creditos_antecipados").select("id,data,placa,valor_pago,forma_pagamento,observacao").eq("data", dia),
     db.from("alteracoes").select("feito_em,resumo,justificativa,usuario_nome,acao").eq("dia", dia).order("feito_em"),
+    db.from("caixa_fechamentos").select("*").eq("dia", dia).maybeSingle(),
+    db.from("caixa_fechamentos").select("dia,total,fechado_em,fechado_por_nome").order("dia", { ascending: false }).limit(15),
   ]);
-  const vendas = c.data || [], deps = d.data || [], alts = a.data || [];
+  const vendas = c.data || [], deps = d.data || [], alts = a.data || [], fech = f.data || null;
   const cx = calcularCaixa(vendas, deps);
+  caixaAtual = { dia, vendas, deps, alts, cx, fech };
+  const depois = fech ? alts.filter(x => new Date(x.feito_em) > new Date(fech.fechado_em)) : [];
+  const quando = (t) => new Date(t).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  $("caixaStatus").innerHTML = fech
+    ? `<div class="msg ok"><b>Caixa fechado</b> em ${quando(fech.fechado_em)} por ${esc(fech.fechado_por_nome || "—")} · total no fechamento <b>${moeda(fech.total)}</b>${fech.observacao ? "<br>Obs.: " + esc(fech.observacao) : ""}</div>`
+      + (depois.length ? `<div class="msg aviso"><b>Alterado depois do fechamento</b>: ${depois.length} alteração(ões), listadas abaixo. Total atual ${moeda(cx.total)} (no fechamento: ${moeda(fech.total)}).</div>` : "")
+    : `<div class="sub" style="margin:4px 0 8px">Caixa <b>aberto</b>.${dia < hojeISO() ? " Este dia ainda não foi fechado." : ""}</div>`;
+  $("btnFecharCaixa").classList.toggle("oculto", !!fech || !(pode("lancar_vendas") || perfil?.papel === "gestor") || dia > hojeISO());
+  $("caixaHistorico").innerHTML = (h.data || []).length ? `<h2 style="margin-top:16px">Caixas fechados</h2><div class="rolagem" style="max-height:260px">` +
+    h.data.map(x => `<div class="hist-caixa" data-dia="${x.dia}"><span><b>${dataBR(x.dia)}</b> · ${esc(x.fechado_por_nome || "—")}</span><span>${moeda(x.total)}</span></div>`).join("") + "</div>" : "";
+  $$("#caixaHistorico .hist-caixa").forEach(el => el.onclick = () => { $("caixaDia").value = el.dataset.dia; carregarCaixa(); $("cartaoCaixa").scrollIntoView({ behavior: "smooth" }); });
   $("caixaTitulo").textContent = dia === hojeISO() ? "Caixa de hoje" : "Caixa de " + dataBR(dia);
   $("caixaTotal").textContent = moeda(cx.total);
   $("caixaFormas").innerHTML = FORMAS_CAIXA.map(f => `<div><span>${NOME_FORMA[f]}</span><b>${moeda(cx.por[f])}</b></div>`).join("");
@@ -1018,16 +1050,85 @@ async function carregarCaixa() {
     cx.usado > 0 ? `Pago com carteira: <b class="sai">− ${moeda(cx.usado)}</b> (${cx.nCart} carga${cx.nCart > 1 ? "s" : ""}). Não soma: o dinheiro entrou no dia do depósito.` : "",
   ].filter(Boolean).join("<br>");
   $("caixaAlteracoes").innerHTML = alts.length ? `<h2 style="margin-top:14px">Alterações neste caixa (${alts.length})</h2>` + alts.map(x =>
-    `<div class="alt"><b>${esc(x.resumo)}</b>${hora(x.feito_em)} · ${esc(x.usuario_nome || "—")}${x.feito_em.slice(0, 10) !== dia ? " · em " + dataBR(x.feito_em) : ""}<br>Justificativa: ${esc(x.justificativa || "—")}</div>`).join("") : "";
-  $("caixaVendas").innerHTML = vendas.map(r => linhaVenda(r, true)).join("") || '<tr><td colspan="6" class="vazio">Nenhuma venda neste dia.</td></tr>';
+    `<div class="alt"><b>${esc(x.resumo)}</b>${hora(x.feito_em)} · ${esc(x.usuario_nome || "—")}${x.feito_em.slice(0, 10) !== dia ? " · em " + dataBR(x.feito_em) : ""}${fech && new Date(x.feito_em) > new Date(fech.fechado_em) ? ' · <b class="sai">após o fechamento</b>' : ""}<br>Justificativa: ${esc(x.justificativa || "—")}</div>`).join("") : "";
+  $("caixaVendas").innerHTML = vendas.map(r => linhaVenda(r, true, !!fech)).join("") || '<tr><td colspan="6" class="vazio">Nenhuma venda neste dia.</td></tr>';
   depositosPorId = Object.fromEntries(deps.map(x => [x.id, x]));
   $("caixaDepositos").innerHTML = deps.length ? `<h2 style="margin-top:14px">Depósitos em carteira</h2><table><tbody>` + deps.map(x =>
     `<tr><td class="pl">${esc(x.placa)}</td><td>${esc(nomeCliente(veiculoDe(x.placa)))}</td><td>${NOME_FORMA[x.forma_pagamento]}</td><td class="num">${moeda(x.valor_pago)}</td>
-     <td class="naoImprimir">${pode("alterar_depositos") ? `<button type="button" class="acaoLinha" data-alterar-deposito="${x.id}">Cancelar</button>` : ""}</td></tr>`).join("") + "</tbody></table>" : "";
+     <td class="naoImprimir">${pode("alterar_depositos") && (!fech || perfil?.papel === "gestor") ? `<button type="button" class="acaoLinha" data-alterar-deposito="${x.id}">Cancelar</button>` : ""}</td></tr>`).join("") + "</tbody></table>" : "";
   ligarAcoes($("cartaoCaixa"));
 }
-$("caixaDia").addEventListener("change", carregarCaixa);
+$("caixaDia").addEventListener("change", () => { msg("msgCaixa", ""); carregarCaixa(); });
 $("btnImprimirCaixa").onclick = () => window.print();
+
+// ---------------- Fechamento do caixa e relatório (PDF / Excel) ----------------
+let caixaAtual = null, hojeFechado = false;
+$("btnFecharCaixa").onclick = async () => {
+  if (!caixaAtual) return;
+  const { dia, cx, vendas } = caixaAtual;
+  const formas = FORMAS_CAIXA.filter(f => cx.por[f] > 0.009).map(f => `${NOME_FORMA[f]}: ${moeda(cx.por[f])}`).join("\n") || "Sem entradas";
+  if (!confirm(`Fechar o caixa de ${dataBR(dia)}?\n\n${vendas.length} venda(s) · total ${moeda(cx.total)}\n${formas}\n\nDepois de fechado, só o gestor poderá alterar ou cancelar os lançamentos deste dia.`)) return;
+  const obs = prompt("Observação do fechamento (opcional):", "") ?? "";
+  $("btnFecharCaixa").disabled = true;
+  const { error } = await db.rpc("fechar_caixa", { p_dia: dia, p_observacao: obs });
+  $("btnFecharCaixa").disabled = false;
+  if (error) return msg("msgCaixa", traduzir(error));
+  await carregarCaixa(); carregarHoje();
+  msg("msgCaixa", `Caixa de ${dataBR(dia)} fechado. Baixe o relatório: <button type="button" class="link" id="lnkPdf">PDF</button> · <button type="button" class="link" id="lnkExcel">Excel</button>`, "ok");
+  $("lnkPdf").onclick = baixarPdfCaixa; $("lnkExcel").onclick = baixarExcelCaixa;
+};
+function dadosRelatorio() {
+  const { dia, vendas, deps, alts, cx, fech } = caixaAtual;
+  const status = fech ? `Fechado em ${new Date(fech.fechado_em).toLocaleString("pt-BR")} por ${fech.fechado_por_nome || "—"} · total no fechamento ${moeda(fech.total)}` : "Caixa aberto (ainda não fechado)";
+  const linhasVendas = vendas.map(r => { const vc = Number(r.valor_carteira || 0), rec = Number(r.valor) - vc;
+    return [hora(r.data), r.placa, nomeCliente(veiculoDe(r.placa)), NOME_MATERIAL[r.produto] || "Areia", descPagamento(r), Number(r.valor), rec > 0.009 ? rec : 0]; });
+  const linhasDeps = deps.map(x => [x.placa, nomeCliente(veiculoDe(x.placa)), NOME_FORMA[x.forma_pagamento], Number(x.valor_pago), x.observacao || ""]);
+  const linhasAlts = alts.map(x => [new Date(x.feito_em).toLocaleString("pt-BR"), x.resumo, x.usuario_nome || "—", x.justificativa || "—",
+    fech && new Date(x.feito_em) > new Date(fech.fechado_em) ? "sim" : ""]);
+  const resumo = [...FORMAS_CAIXA.map(f => [NOME_FORMA[f], cx.por[f]]), ["Total do caixa", cx.total],
+    ["Depósitos em carteira (incluídos)", cx.dep], ["Pago com carteira (não soma)", cx.usado], ["Vendas no dia", vendas.length]];
+  return { dia, status, resumo, linhasVendas, linhasDeps, linhasAlts };
+}
+async function baixarExcelCaixa() {
+  if (!caixaAtual) return;
+  try {
+    await carregarScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+    const r = dadosRelatorio(), wb = XLSX.utils.book_new();
+    const aba = (nome, linhas, larg) => { const ws = XLSX.utils.aoa_to_sheet(linhas); ws["!cols"] = larg.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, nome); };
+    aba("Resumo", [["Mineração Areia Limpa · Caixa de " + dataBR(r.dia)], [r.status], [], ["Item", "Valor"], ...r.resumo], [36, 16]);
+    aba("Vendas", [["Hora", "Placa", "Cliente", "Material", "Pagamento", "Valor da carga", "Entrou no caixa"], ...r.linhasVendas], [8, 10, 28, 12, 18, 14, 14]);
+    aba("Depósitos", [["Placa", "Cliente", "Forma", "Valor", "Observação"], ...r.linhasDeps], [10, 28, 10, 12, 50]);
+    aba("Alterações", [["Quando", "O que foi alterado", "Quem", "Justificativa", "Após o fechamento"], ...r.linhasAlts], [18, 50, 18, 40, 16]);
+    XLSX.writeFile(wb, `caixa-${r.dia}.xlsx`);
+  } catch (e) { msg("msgCaixa", esc(e.message)); }
+}
+async function baixarPdfCaixa() {
+  if (!caixaAtual) return;
+  try {
+    await carregarScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+    await carregarScript("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js");
+    const r = dadosRelatorio(), doc = new window.jspdf.jsPDF({ unit: "pt", format: "a4" });
+    const cor = [42, 42, 44], ouro = [176, 135, 74];
+    doc.setFontSize(16); doc.setTextColor(...cor); doc.text("Mineração Areia Limpa", 40, 48);
+    doc.setFontSize(12); doc.text("Relatório de caixa · " + dataBR(r.dia), 40, 68);
+    doc.setFontSize(9); doc.setTextColor(110); doc.text(r.status, 40, 84, { maxWidth: 515 });
+    const tab = (titulo, head, body, y, fmt) => {
+      doc.setFontSize(11); doc.setTextColor(...cor); doc.text(titulo, 40, y);
+      doc.autoTable({ startY: y + 6, head: [head], body: body.map(l => l.map((v, i) => fmt && fmt.includes(i) ? moeda(v) : String(v ?? ""))),
+        styles: { fontSize: 8, cellPadding: 4 }, headStyles: { fillColor: cor, textColor: 255 }, alternateRowStyles: { fillColor: [246, 245, 243] }, margin: { left: 40, right: 40 } });
+      return doc.lastAutoTable.finalY + 22;
+    };
+    let y = tab("Resumo", ["Item", "Valor"], r.resumo.map(([a, b]) => [a, typeof b === "number" && a !== "Vendas no dia" ? moeda(b) : b]), 108);
+    y = tab("Vendas", ["Hora", "Placa", "Cliente", "Material", "Pagamento", "Valor", "Entrou"], r.linhasVendas, y, [5, 6]);
+    if (r.linhasDeps.length) y = tab("Depósitos em carteira", ["Placa", "Cliente", "Forma", "Valor", "Observação"], r.linhasDeps, y, [3]);
+    if (r.linhasAlts.length) y = tab("Alterações (com justificativa)", ["Quando", "O que foi alterado", "Quem", "Justificativa", "Após fech."], r.linhasAlts, y);
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(...ouro); doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")} · página ${i} de ${n}`, 40, 820); }
+    doc.save(`caixa-${r.dia}.pdf`);
+  } catch (e) { msg("msgCaixa", esc(e.message)); }
+}
+$("btnPdfCaixa").onclick = baixarPdfCaixa;
+$("btnExcelCaixa").onclick = baixarExcelCaixa;
 
 // ---------------- Alterações com justificativa ----------------
 let alterando = null;
@@ -1145,6 +1246,24 @@ $("btnSalvarPrecos").onclick = async () => {
   finally { $("btnSalvarPrecos").disabled = false; }
 };
 
+// ---------- Placa parecida (erro de digitação ou de leitura da câmera) ----------
+const GRUPOS_CONFUSAO = ["0ODQ", "1IL", "8B", "5S", "2Z", "6G", "4A", "7T"];
+const confundivel = (a, b) => GRUPOS_CONFUSAO.some(g => g.includes(a) && g.includes(b));
+/** Diferença entre duas placas: troca de letra/número parecido conta meio ponto; inversão de vizinhos conta 1. */
+function distanciaPlaca(a, b) {
+  if (a.length !== b.length) return 9;
+  const dif = [];
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) dif.push(i);
+  if (dif.length === 2 && dif[1] === dif[0] + 1 && a[dif[0]] === b[dif[1]] && a[dif[1]] === b[dif[0]]) return 1;
+  return dif.reduce((t, i) => t + (confundivel(a[i], b[i]) ? 0.5 : 1), 0);
+}
+function placasParecidas(p) {
+  if (!placaValida(p) || veiculoDe(p)) return [];
+  return veiculos.map(v => ({ v, d: distanciaPlaca(p, v.placa) })).filter(x => x.d > 0 && x.d <= 1)
+    .sort((a, b) => a.d - b.d).slice(0, 3).map(x => x.v);
+}
+const descVeiculo = (v) => [v.cor ? "cor " + v.cor : "", v.modelo, nomeCliente(v) !== "—" ? nomeCliente(v) : ""].filter(Boolean).join(" · ");
+
 function atualizarPlaca() {
   const texto = $("placa").value;
   const p = normalizar(texto);
@@ -1157,9 +1276,16 @@ function atualizarPlaca() {
   let html = "";
   if (v?.situacao === "bloqueado") html = `<div class="info bloq">⛔ VEÍCULO PROIBIDO${v.motivo_bloqueio ? " · " + esc(v.motivo_bloqueio) : ""}. Não é possível lançar carga.</div>`;
   else if (v?.tipo === "ignorado") html = `<div class="info alerta">⚠ Esta placa está cadastrada como "outro veículo" (não caçamba).</div>`;
-  else if (v) html = `<div class="info ok">✔ <b>${esc(nomeCliente(v))}</b>${v.cliente && v.motorista ? " · " + esc(v.motorista) : ""} · ${esc(v.modelo)} ${esc(v.cor)}</div>`;
-  else if (p.length >= 7 && placaValida(p) && !sugs.length) html = `<div class="info alerta">⚠ Placa não cadastrada. Cadastre em Veículos ou lance assim mesmo.</div>`;
+  else if (v) html = `<div class="info ok">✔ <b>${esc(nomeCliente(v))}</b>${v.cliente && v.motorista ? " · " + esc(v.motorista) : ""}${v.modelo ? " · " + esc(v.modelo) : ""}${v.cor ? ` · <b>cor ${esc(v.cor)}</b>` : ""}${v.porte ? " · " + (v.porte === "toco" ? "Toco" : "Truck") : ""}<br><span style="font-weight:400">Confira se a cor do veículo confere.</span></div>`;
+  else if (p.length >= 7 && placaValida(p)) {
+    const par = placasParecidas(p);
+    html = par.length
+      ? `<div class="info alerta">⚠ Placa <b>${esc(p)}</b> não cadastrada, mas é parecida com:` + par.map(x =>
+          `<div class="parecida"><span><b class="pl">${esc(x.placa)}</b> ${esc(descVeiculo(x))}</span><button type="button" class="btn sec" data-usar="${esc(x.placa)}">Usar esta</button></div>`).join("") + `</div>`
+      : (!sugs.length ? `<div class="info alerta">⚠ Placa não cadastrada. Cadastre em Veículos ou lance assim mesmo.</div>` : "");
+  }
   $("infoVeiculo").innerHTML = html;
+  $$("#infoVeiculo [data-usar]").forEach(b => b.onclick = () => escolherPlaca(b.dataset.usar));
   const s = v || placaValida(p) ? saldoDe(p) : 0;
   $("optCarteira").disabled = s <= 0.009;
   $("saldoCredito").textContent = s > 0.009 ? moeda(s) : "sem saldo";
@@ -1168,12 +1294,23 @@ function atualizarPlaca() {
     $("placa").dataset.ultima = p;
     document.querySelector("input[name=forma][value=pix]").checked = true; document.querySelector("input[name=complemento][value=pix]").checked = true;
     if (v?.porte) document.querySelector(`input[name=porte][value=${v.porte}]`).checked = true;
+    mostrarPorteCadastro(v);
     $("valorVenda").dataset.manual = "";
     aplicarPrecoSugerido(true);
   }
   $("frequentes").classList.toggle("oculto", texto.length > 0 || !$("chips").children.length);
   $("btnSalvar").disabled = v?.situacao === "bloqueado";
   atualizarPagamento();
+}
+/** Veículo cadastrado com caçamba definida: mostra o porte do cadastro (dá para mudar só nesta venda). */
+function mostrarPorteCadastro(v) {
+  const fixo = !!v?.porte;
+  $("porteCadastro").classList.toggle("oculto", !fixo);
+  $("portes").classList.toggle("oculto", fixo);
+  if (fixo) {
+    $("porteCadastro").innerHTML = `${v.porte === "toco" ? "Toco" : "Truck"} (do cadastro) <button type="button" class="link" id="btnMudarPorte">mudar nesta venda</button>`;
+    $("btnMudarPorte").onclick = () => { $("porteCadastro").classList.add("oculto"); $("portes").classList.remove("oculto"); };
+  }
 }
 /** Calcula quanto sai da carteira e quanto entra no caixa. */
 function calcularPagamento() {
@@ -1208,6 +1345,18 @@ $("formCarga").onsubmit = async (ev) => {
     else return msg("msgCarga", "Escolha o cliente/placa na lista ou digite uma placa válida (ABC1D23 ou ABC1234).");
   }
   if (veiculoDe(placa)?.situacao === "bloqueado") return msg("msgCarga", "Veículo proibido. Carga não lançada.");
+  // placa não cadastrada mas parecida com uma cadastrada: confirma antes (erro de digitação)
+  const par = placasParecidas(placa);
+  if (par.length) {
+    const x = par[0];
+    if (confirm(`A placa ${placa} não está cadastrada, mas é muito parecida com ${x.placa}${descVeiculo(x) ? " (" + descVeiculo(x) + ")" : ""}.\n\nOK: corrigir para ${x.placa}\nCancelar: manter ${placa}`)) {
+      escolherPlaca(x.placa);
+      return msg("msgCarga", `Placa corrigida para <b>${esc(x.placa)}</b>. Confira a cor e o valor e clique em Lançar venda.`, "aviso");
+    }
+    if (!confirm(`Lançar a venda para ${placa}, que NÃO está cadastrada?`)) return;
+  }
+  if (hojeFechado && new Date($("quando").value).toDateString() === new Date().toDateString()
+      && !confirm("O caixa de hoje já foi fechado. A venda será registrada como incluída após o fechamento. Continuar?")) return;
   const quando = new Date($("quando").value);
   if (isNaN(quando) || quando > new Date(Date.now() + 5 * 6e4)) return msg("msgCarga", "Data/hora inválida.");
   const pg = calcularPagamento();
