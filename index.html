@@ -307,6 +307,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       <label for="valorVenda">Valor da carga (R$)</label>
       <input id="valorVenda" type="number" min="1" step="0.01" required style="font-weight:700;font-size:20px">
       <div class="sub" id="origemPreco"></div>
+      <div id="boxExcesso"></div>
       <label>Forma de pagamento</label>
       <div class="formas" id="formas">
         <label><input type="radio" name="forma" value="pix" checked>Pix</label>
@@ -1110,6 +1111,19 @@ function aplicarPrecoSugerido(forcar) {
 }
 $$("input[name=material], input[name=porte]").forEach(r => r.onchange = () => aplicarPrecoSugerido(true));
 $("valorVenda").addEventListener("input", () => { $("valorVenda").dataset.manual = "1"; $("origemPreco").textContent = "Valor alterado manualmente."; atualizarPagamento(); });
+/** Valor pago acima do preço do produto: a diferença vai para a carteira do cliente. */
+function excessoVenda() {
+  const placa = normalizar($("placa").value);
+  const ref = precoSugerido(placa, porteSel(), materialSel()).valor;
+  const valor = r2(Number($("valorVenda").value) || 0);
+  if (!(ref > 0) || formaSel() === "carteira" || !placaValida(placa)) return null;
+  const dif = r2(valor - ref);
+  return dif > 0.009 ? { ref: r2(ref), dif, valor, placa } : null;
+}
+function mostrarExcesso() {
+  const ex = excessoVenda();
+  $("boxExcesso").innerHTML = ex ? `<div class="msg aviso">Valor <b>acima do preço</b> do produto (${moeda(ex.ref)}). A venda será lançada por ${moeda(ex.ref)} e a diferença de <b>${moeda(ex.dif)}</b> entrará na <b>carteira</b> de ${esc(ex.placa)}.</div>` : "";
+}
 function preencherTabelaPrecos() {
   const ids = { pTruckLimpa: "truck|areia_limpa", pTruckSuja: "truck|areia_suja", pTocoLimpa: "toco|areia_limpa", pTocoSuja: "toco|areia_suja" };
   for (const [id, k] of Object.entries(ids)) $(id).value = tabelaPrecos[k] ?? "";
@@ -1171,6 +1185,7 @@ function calcularPagamento() {
   return { valor, forma, saldo, valor_carteira: doSaldo, forma_complemento: falta > 0.009 ? complementoSel() : null, falta };
 }
 function atualizarPagamento() {
+  mostrarExcesso();
   const pg = calcularPagamento();
   const box = $("boxCredito");
   if (pg.forma !== "carteira") { box.classList.add("oculto"); $("boxComplemento").classList.add("oculto"); return; }
@@ -1198,11 +1213,23 @@ $("formCarga").onsubmit = async (ev) => {
   const pg = calcularPagamento();
   if (!(pg.valor > 0)) return msg("msgCarga", "Informe o valor da carga.");
   if (pg.forma === "carteira" && pg.valor_carteira <= 0) return msg("msgCarga", "Este cliente não tem saldo na carteira. Escolha outra forma de pagamento.");
+  const ex = excessoVenda();
+  if (ex && !confirm(`O valor pago (${moeda(ex.valor)}) é maior que o preço do produto (${moeda(ex.ref)}).\n\nA venda será lançada por ${moeda(ex.ref)} e a diferença de ${moeda(ex.dif)} será incluída na CARTEIRA de ${placa} (${NOME_FORMA[pg.forma]}), para usar nas próximas cargas.\n\nConfirmar?`)) return;
   $("btnSalvar").disabled = true; msg("msgCarga", "");
   try {
     const de = new Date(quando - 10 * 6e4).toISOString(), ate = new Date(+quando + 10 * 6e4).toISOString();
     const { data: dup } = await db.from("carregamentos").select("id").eq("placa", placa).gte("data", de).lte("data", ate).limit(1);
     if (dup?.length && !confirm(`Já existe uma carga de ${placa} perto desse horário. Lançar mesmo assim?`)) return;
+    if (ex) {
+      const { error } = await db.rpc("lancar_venda_com_diferenca", { venda: {
+        data: quando.toISOString(), placa, valor: ex.ref, produto: materialSel(), porte: porteSel(),
+        forma_pagamento: pg.forma, observacao: ($("obs").value.trim() + " [web]").trim() }, diferenca: ex.dif });
+      if (error) throw error;
+      msg("msgCarga", `Venda de ${placa} lançada às ${hora(quando)} · ${NOME_MATERIAL[materialSel()]} · ${moeda(ex.ref)} · ${NOME_FORMA[pg.forma]}. <b>${moeda(ex.dif)}</b> incluídos na carteira do cliente.`, "ok");
+      $("placa").value = ""; $("obs").value = ""; $("quando").value = agoraLocal();
+      await carregarBase(); atualizarPlaca(); $("placa").focus();
+      return;
+    }
     const { error } = await db.from("carregamentos").insert({
       data: quando.toISOString(), placa, valor: pg.valor, produto: materialSel(), porte: porteSel(),
       forma_pagamento: pg.forma, valor_carteira: pg.valor_carteira, forma_complemento: pg.forma_complemento,
