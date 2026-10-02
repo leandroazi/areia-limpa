@@ -173,14 +173,20 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 .conc-linha { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 3px 0; }
 .conc-linha .dif { font-weight: 700; }
 .formas.formas2 { grid-template-columns: 1fr 1fr; }
+.mapa { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; margin-top: 6px; font-size: 13px; }
+.mapa select { margin: 0; padding: 6px 8px; font-size: 13px; }
+.inc-item { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--suave); font-size: 13px; cursor: pointer; }
+.inc-item .pl { font-family: ui-monospace, Menlo, monospace; font-weight: 700; }
+.inc-item .falta { color: var(--amarelo); text-align: right; }
+.tag.aviso { background: #FBF0D9; color: #8A5B00; }
 .camstatus { display: flex; align-items: center; gap: 10px; background: var(--suave); border-radius: 12px; padding: 10px 12px; font-size: 14px; margin-top: 6px; }
 .camstatus small { color: var(--sec); display: block; font-size: 12px; margin-top: 2px; }
 .ponto { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--borda); }
 .ponto.on { background: var(--verde); box-shadow: 0 0 0 4px #E6F4EA; } .ponto.aviso { background: var(--amarelo); } .ponto.off { background: var(--vermelho); }
-.camfotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }
+.camfotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
 .camfotos button { border: 0; padding: 0; background: var(--suave); border-radius: 10px; overflow: hidden; text-align: left; cursor: pointer; color: var(--texto); }
 .camfotos img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; background: var(--borda); }
-.camfotos span { display: block; padding: 4px 6px; font-size: 12px; }
+.camfotos span { display: block; padding: 4px 6px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .camfotos span b { font-family: ui-monospace, Menlo, monospace; }
 .hist-dia { font-size: 14px; font-weight: 700; margin: 12px 0 2px; display: flex; justify-content: space-between; }
 .hist-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--suave); font-size: 14px; }
@@ -405,6 +411,28 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       <button class="btn sec" id="btnSalvarPrecos" type="button">Salvar preços</button>
       <div id="msgPrecos"></div>
     </div>
+    <div class="cartao oculto" id="cartaoIncompletos">
+      <div class="topo">
+        <h2 id="tituloIncompletos">Cadastros incompletos</h2>
+        <button class="btn sec" style="width:auto;margin:0;padding:8px 12px" id="btnBaixarPendencias" type="button">Baixar planilha</button>
+      </div>
+      <div class="sub">Caçambas com dados faltando. Baixe a planilha, peça os dados que faltam e envie de volta aqui em "Cadastro em lote": o sistema completa os cadastros.</div>
+      <div id="listaIncompletos" class="rolagem" style="max-height:360px"></div>
+    </div>
+    <div class="cartao oculto" id="cartaoLoteVeic">
+      <h2>Cadastro em lote (planilha)</h2>
+      <div class="sub">Envie a planilha de veículos (Excel ou CSV). Placa nova é cadastrada; placa já cadastrada é completada com o que vier preenchido. Célula vazia não apaga nada.</div>
+      <label for="arqVeic">Planilha</label>
+      <input id="arqVeic" type="file" accept=".xlsx,.xls,.csv">
+      <div id="msgVeicLote"></div>
+      <div id="previaVeic" class="oculto">
+        <details id="boxMapa" style="margin-top:8px"><summary class="sub">Colunas da planilha (confira se cada dado foi encontrado)</summary>
+          <div id="mapaVeic" class="mapa"></div></details>
+        <div class="caixa" id="resumoVeic"></div>
+        <div id="detVeic" class="rolagem" style="max-height:260px"></div>
+        <button class="btn" id="btnSalvarLote" type="button">Cadastrar e atualizar</button>
+      </div>
+    </div>
     <div class="cartao">
       <div class="topo">
         <h2>Veículos</h2>
@@ -572,7 +600,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       <div id="dashCargas"></div>
     </div>
     <div class="cartao grafico">
-      <div class="topo"><h2>Caixa por dia</h2><span class="sub">vendas no ato + depósitos em carteira</span></div>
+      <div class="topo"><h2>Caixa por dia</h2><span class="sub">vendas</span></div>
       <div id="dashCaixa"></div>
     </div>
     <div class="cartao barras">
@@ -853,6 +881,7 @@ function aplicarPermissoes() {
   $("btnAbrirVenda").classList.toggle("oculto", !pode("lancar_vendas"));
   $("btnCadastrarVeiculo").classList.toggle("oculto", !pode("cadastrar_veiculos"));
   $("btnNovoVeiculo").classList.toggle("oculto", !pode("cadastrar_veiculos"));
+  $("cartaoLoteVeic").classList.toggle("oculto", !(pode("cadastrar_veiculos") || pode("alterar_veiculos")));
   $("formCredito").classList.toggle("oculto", !pode("lancar_depositos"));
   $("formDespesa").classList.toggle("oculto", !pode("lancar_despesas"));
   document.querySelector(".acoes2").style.gridTemplateColumns = pode("cadastrar_veiculos") ? "" : "1fr";
@@ -1196,12 +1225,190 @@ function renderVeiculos() {
         ${v.situacao === "bloqueado" ? '<span class="tag bloq">Proibido</span>' : '<span class="tag ok">Permitido</span>'}
         ${v.tipo === "ignorado" ? '<span class="tag cin">Outro</span>' : ""}
         ${s > 0.009 ? `<span class="tag ouro">Carteira: ${moeda(s)}</span>` : ""}
+        ${v.tipo === "cacamba" && faltandoVeic(v).length ? `<span class="tag aviso">Falta ${faltandoVeic(v).length} dado${faltandoVeic(v).length > 1 ? "s" : ""}</span>` : ""}
         <div class="d">${esc([v.motorista, v.modelo, v.cor].filter(Boolean).join(" · ") || "—")}</div>
         ${v.cliente ? `<div class="d">${esc(v.cliente)}</div>` : ""}</div>
       <div class="r"><b>${a.total || 0}</b>acessos<br>${a.ultimos_30 || 0} em 30 dias</div></div>`;
   }).join("");
   $$(".veic").forEach(el => el.onclick = () => abrirVeiculo(veiculos.find(v => String(v.id) === el.dataset.id)));
+  renderIncompletos();
 }
+
+// ---------------- Cadastro em lote e cadastros incompletos ----------------
+// Dados que toda caçamba deve ter (os outros são opcionais)
+const CAMPOS_VEIC = [
+  { k: "placa", nome: "Placa", re: /placa/ },
+  { k: "cliente", nome: "Cliente", re: /cliente|empresa|propriet|dono|razao|contratante|comprador/, obrig: true },
+  { k: "motorista", nome: "Motorista", re: /motorista|condutor|caminhoneiro/, obrig: true },
+  { k: "telefone", nome: "Telefone", re: /telefone|^tel\b|fone|celular|whats|contato/, obrig: true },
+  { k: "modelo", nome: "Marca/modelo", re: /modelo|marca|^caminhao$|^veiculo$/, obrig: true },
+  { k: "cor", nome: "Cor", re: /^cor\b|cor do/, obrig: true },
+  { k: "porte", nome: "Caçamba (toco/truck)", re: /porte|ca[cç]amba|tipo.*(caminh|veic)|eixo|^tipo$/, obrig: true },
+  { k: "preco_limpa", nome: "Preço especial limpa", re: /limpa/ },
+  { k: "preco_suja", nome: "Preço especial suja", re: /suja/ },
+  { k: "observacao", nome: "Observação", re: /obs/ },
+];
+const semAcentoTxt = (t) => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+function faltandoVeic(v) {
+  return CAMPOS_VEIC.filter(c => c.obrig && !String(v[c.k] ?? "").trim()).map(c => c.k === "porte" ? "caçamba" : c.nome.toLowerCase());
+}
+function renderIncompletos() {
+  const inc = veiculos.filter(v => v.tipo === "cacamba" && faltandoVeic(v).length);
+  $("cartaoIncompletos").classList.toggle("oculto", !inc.length);
+  $("tituloIncompletos").textContent = `Cadastros incompletos (${inc.length})`;
+  $("listaIncompletos").innerHTML = inc.map(v => `<div class="inc-item" data-id="${v.id}"><div><span class="pl">${esc(v.placa)}</span>
+      <div class="d" style="color:var(--sec)">${esc(v.cliente || v.motorista || "")}</div></div>
+      <div class="falta">Falta: ${esc(faltandoVeic(v).join(", "))}</div></div>`).join("");
+  $$("#listaIncompletos .inc-item").forEach(el => el.onclick = () => abrirVeiculo(veiculos.find(v => String(v.id) === el.dataset.id)));
+}
+$("btnBaixarPendencias").onclick = async () => {
+  try {
+    await carregarScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+    const inc = veiculos.filter(v => v.tipo === "cacamba" && faltandoVeic(v).length);
+    const linhas = inc.map(v => ({ "Placa": v.placa, "Cliente": v.cliente || "", "Motorista": v.motorista || "", "Telefone": v.telefone || "",
+      "Marca/modelo": v.modelo || "", "Cor": v.cor || "", "Caçamba (toco/truck)": v.porte || "", "Falta preencher": faltandoVeic(v).join(", ") }));
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    ws["!cols"] = [10, 26, 22, 16, 18, 12, 20, 40].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Pendências");
+    XLSX.writeFile(wb, `veiculos-pendencias-${hojeISO()}.xlsx`);
+  } catch (e) { alert(e.message); }
+};
+
+let loteVeic = null;          // { cab, dados, mapa, arquivo }
+function lerNumeroBR(v) {
+  if (typeof v === "number") return v;
+  const t = String(v ?? "").replace(/[^0-9,.-]/g, "");
+  if (!t) return null;
+  const n = Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t);
+  return isFinite(n) && n > 0 ? n : null;
+}
+function lerPorte(v) {
+  const t = semAcentoTxt(v);
+  if (/truck|truk|trucad|traca|3 ?eixo/.test(t)) return "truck";
+  if (/toco|2 ?eixo/.test(t)) return "toco";
+  return "";
+}
+function textoCelula(v) {
+  if (v instanceof Date) return v.toLocaleDateString("pt-BR");
+  return String(v ?? "").replace(/\s+/g, " ").trim();
+}
+function linhasDoLote() {
+  const { dados, mapa } = loteVeic, porPlaca = new Map();
+  let semPlaca = 0;
+  dados.forEach((r, i) => {
+    const bruto = r[mapa.placa] ?? "";
+    const placa = normalizar(textoCelula(bruto));
+    if (!placa) { if (r.some(c => textoCelula(c))) semPlaca++; return; }
+    const o = { linha: loteVeic.inicio + i + 2, placa };
+    for (const c of CAMPOS_VEIC) {
+      if (c.k === "placa" || mapa[c.k] === undefined || mapa[c.k] === "") continue;
+      const v = r[mapa[c.k]];
+      if (c.k === "porte") o.porte = lerPorte(v);
+      else if (c.k.startsWith("preco")) o[c.k] = lerNumeroBR(v);
+      else o[c.k] = textoCelula(v);
+    }
+    // placa repetida na planilha: junta (o que vier preenchido depois completa)
+    const ant = porPlaca.get(placa) || {};
+    for (const [k, v] of Object.entries(o)) if (v !== "" && v !== null && v !== undefined) ant[k] = v;
+    porPlaca.set(placa, ant);
+  });
+  return { linhas: [...porPlaca.values()], semPlaca };
+}
+function mostrarPreviaLote() {
+  const { cab, mapa } = loteVeic;
+  const opcoes = (k) => `<option value="">— não tem —</option>` + cab.map((h, i) => `<option value="${i}" ${String(mapa[k]) === String(i) ? "selected" : ""}>${esc(h || "Coluna " + (i + 1))}</option>`).join("");
+  $("mapaVeic").innerHTML = CAMPOS_VEIC.map(c => `<span>${c.nome}${c.obrig ? " *" : ""}</span><select data-k="${c.k}">${opcoes(c.k)}</select>`).join("");
+  $$("#mapaVeic select").forEach(s => s.onchange = () => { loteVeic.mapa[s.dataset.k] = s.value === "" ? "" : Number(s.value); mostrarPreviaLote(); });
+  if (mapa.placa === undefined || mapa.placa === "") {
+    $("boxMapa").open = true;
+    $("resumoVeic").innerHTML = ""; $("detVeic").innerHTML = `<div class="msg erro" style="margin:8px">Não achei a coluna da placa. Escolha acima qual coluna tem a placa.</div>`;
+    $("btnSalvarLote").disabled = true; return;
+  }
+  const { linhas, semPlaca } = linhasDoLote();
+  const existentes = new Map(veiculos.map(v => [v.placa, v]));
+  const valida = (p) => /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(p);
+  let novas = 0, atual = 0, iguais = 0, invalidas = [];
+  const det = [];
+  for (const l of linhas) {
+    if (!valida(l.placa)) { invalidas.push(l.placa); continue; }
+    const v = existentes.get(l.placa);
+    if (!v) { novas++; det.push(`<div class="inc-item"><span class="pl">${esc(l.placa)}</span><span class="ent">novo cadastro</span></div>`); continue; }
+    const muda = CAMPOS_VEIC.filter(c => c.k !== "placa" && l[c.k] !== undefined && l[c.k] !== "" && l[c.k] !== null && String(l[c.k]) !== String(v[c.k] ?? "")
+      && !(c.k.startsWith("preco") && Number(l[c.k]) === Number(v[c.k])));
+    if (muda.length) { atual++; det.push(`<div class="inc-item"><span class="pl">${esc(l.placa)}</span><span>atualiza ${esc(muda.map(c => c.nome.toLowerCase()).join(", "))}</span></div>`); }
+    else iguais++;
+  }
+  $("resumoVeic").innerHTML = [["Placas na planilha", linhas.length], ["Novos cadastros", `<span class="ent">${novas}</span>`],
+    ["Cadastros a completar", atual], ["Sem mudança", iguais], ["Placa inválida", invalidas.length], ["Linhas sem placa", semPlaca]]
+    .map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join("");
+  $("detVeic").innerHTML = det.join("") + (invalidas.length ? `<div class="inc-item"><span>Placas inválidas (ignoradas)</span><span class="sai">${esc(invalidas.slice(0, 30).join(", "))}${invalidas.length > 30 ? "…" : ""}</span></div>` : "");
+  $("detVeic").classList.toggle("oculto", !$("detVeic").innerHTML);
+  $("btnSalvarLote").disabled = !(novas + atual);
+  $("btnSalvarLote").textContent = novas + atual ? `Cadastrar ${novas} e completar ${atual}` : "Nada novo para salvar";
+}
+$("arqVeic").onchange = async () => {
+  const f = $("arqVeic").files[0];
+  $("previaVeic").classList.add("oculto"); msg("msgVeicLote", ""); loteVeic = null;
+  if (!f) return;
+  try {
+    msg("msgVeicLote", "Lendo a planilha…", "aviso");
+    await carregarScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+    const ext = f.name.split(".").pop().toLowerCase();
+    let wb;
+    if (ext === "csv") {
+      let texto = await f.text();
+      if (texto.includes("\uFFFD")) texto = new TextDecoder("windows-1252").decode(await f.arrayBuffer());
+      wb = XLSX.read(texto.replace(/^\uFEFF/, ""), { type: "string", raw: true });
+    } else wb = XLSX.read(await f.arrayBuffer(), { type: "array", cellDates: true });
+    // usa a aba que tiver a coluna "placa"
+    let melhor = null, reserva = null;
+    for (const nome of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, raw: true, defval: "" });
+      for (let i = 0; i < Math.min(rows.length, 20); i++) {
+        if (rows[i].some(c => /placa/.test(semAcentoTxt(c)))) { melhor = { rows, i }; break; }
+      }
+      if (melhor) break;
+      if (!reserva && rows.length) reserva = { rows, i: 0 };
+    }
+    melhor = melhor || reserva;
+    if (!melhor || !melhor.rows.length) throw new Error("A planilha está vazia.");
+    const cab = melhor.rows[melhor.i].map(textoCelula);
+    const dados = melhor.rows.slice(melhor.i + 1);
+    // liga cada dado do sistema a uma coluna (pelo nome do cabeçalho)
+    const mapa = {}, usadas = new Set();
+    for (const c of CAMPOS_VEIC) {
+      const i = cab.findIndex((h, j) => !usadas.has(j) && h && c.re.test(semAcentoTxt(h)) && (c.k === "placa" || !/placa/.test(semAcentoTxt(h))));
+      if (i >= 0) { mapa[c.k] = i; usadas.add(i); }
+    }
+    if (mapa.placa === undefined) {        // sem cabeçalho "placa": procura a coluna com cara de placa
+      const i = cab.map((_, j) => dados.filter(r => /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(normalizar(textoCelula(r[j])))).length)
+        .reduce((m, n, j, a) => n > a[m] ? j : m, 0);
+      if (dados.some(r => /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(normalizar(textoCelula(r[i]))))) mapa.placa = i;
+    }
+    loteVeic = { cab, dados, mapa, inicio: melhor.i, arquivo: f.name };
+    msg("msgVeicLote", "");
+    $("previaVeic").classList.remove("oculto");
+    $("boxMapa").open = CAMPOS_VEIC.some(c => c.obrig && mapa[c.k] === undefined);
+    mostrarPreviaLote();
+  } catch (e) { msg("msgVeicLote", esc(e.message || String(e))); }
+};
+$("btnSalvarLote").onclick = async () => {
+  if (!loteVeic) return;
+  const { linhas } = linhasDoLote();
+  $("btnSalvarLote").disabled = true;
+  msg("msgVeicLote", "Salvando…", "aviso");
+  const { data, error } = await db.rpc("importar_veiculos", { linhas, arquivo: loteVeic.arquivo });
+  if (error) { msg("msgVeicLote", esc(error.message)); $("btnSalvarLote").disabled = false; return; }
+  await carregarBase();
+  const inc = veiculos.filter(v => v.tipo === "cacamba" && faltandoVeic(v).length).length;
+  msg("msgVeicLote", [`<b>${data.novos}</b> cadastrado(s) e <b>${data.atualizados}</b> completado(s).`,
+    data.iguais ? `${data.iguais} já estavam iguais.` : "",
+    data.sem_permissao?.length ? `Sem permissão para alterar: ${esc(data.sem_permissao.join(", "))} (peça ao gestor).` : "",
+    inc ? `<b>${inc}</b> caçamba(s) ainda com dados faltando: veja "Cadastros incompletos".` : "Todos os cadastros estão completos."]
+    .filter(Boolean).join("<br>"), "ok");
+  $("previaVeic").classList.add("oculto"); $("arqVeic").value = ""; loteVeic = null;
+  if (inc) $("cartaoIncompletos").scrollIntoView({ behavior: "smooth", block: "start" });
+};
 $("btnNovoVeiculo").onclick = () => abrirVeiculo(null);
 $$("input[name=vSituacao]").forEach(r => r.onchange = () => $("boxMotivo").classList.toggle("oculto", !$("formVeiculo").vSituacao.value.startsWith("b")));
 function abrirVeiculo(v) {
@@ -1590,7 +1797,7 @@ function abrirFoto(caminho, legenda) {
   $("fotoGrande").src = u; $("fotoLegenda").innerHTML = legenda; $("dlgFoto").showModal();
 }
 async function carregarStatusCamera() {
-  const { data, error } = await db.rpc("status_camera", { fotos: 10 });
+  const { data, error } = await db.rpc("status_camera", { fotos: 9 });
   if (error) { $("camStatus").innerHTML = `<span class="ponto"></span><div>${esc(error.message)}</div>`; return; }
   const s = data.status || {}, agora = new Date(data.agora);
   let cls = "off", txt = "Ainda sem contato da câmera";
@@ -2106,7 +2313,7 @@ async function carregarDash() {
     const cargas30 = soma(dias, "cargas");
     $("dashKpis").innerHTML = [
       ["escuro", "Cargas hoje", porDia[hoje].cargas, "até agora"],
-      ["", "Caixa hoje", moeda(porDia[hoje].caixa), "vendas + depósitos"],
+      ["", "Caixa hoje", moeda(porDia[hoje].caixa), "vendas"],
       ["", "Média 7 dias", media7.toFixed(0).replace(".", ","), varMedia === null ? "cargas/dia útil" : `cargas/dia · ${varMedia >= 0 ? "▲" : "▼"} ${Math.abs(varMedia * 100).toFixed(0)}% vs. semana anterior`],
       ["", "Cargas em 30 dias", cargas30, `caixa ${moeda(soma(dias, "caixa"))}`],
     ].map(([c, r, v, s]) => `<div class="kpi ${c}"><div class="r">${r}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
