@@ -173,6 +173,8 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 .conc-linha { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 3px 0; }
 .conc-linha .dif { font-weight: 700; }
 .formas.formas2 { grid-template-columns: 1fr 1fr; }
+.opTicket { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; }
+.opTicket select { width: auto; margin: 0; padding: 6px 8px; font-size: 13px; }
 .acoesCaixa { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
 .acoesCaixa .btn { margin: 0; padding: 12px 8px; font-size: 14px; }
 .acoesCaixa .btn.oculto + .btn { grid-column: auto; }
@@ -346,6 +348,10 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       <input id="quando" type="datetime-local" required>
       <label for="obs">Observação (opcional)</label>
       <input id="obs" type="text" maxlength="200">
+      <div class="opTicket">
+        <label class="lembrar" style="margin:0"><input type="checkbox" id="autoTicket"> Imprimir ticket ao lançar</label>
+        <select id="larguraTicket" title="Largura do papel da impressora"><option value="80">Papel 80 mm</option><option value="58">Papel 58 mm</option></select>
+      </div>
       <button class="btn" id="btnSalvar" type="submit">Lançar venda</button>
       <div id="msgCarga"></div>
     </form>
@@ -993,9 +999,10 @@ function linhaVenda(r, comValor, fechado) {
   const mat = r.produto === "areia_suja" ? ' <span class="tag cin">suja</span>' : "";
   return `<tr><td>${hora(r.data)}</td><td class="pl">${esc(r.placa)}${mat}</td><td>${esc(nomeCliente(veiculoDe(r.placa)))}</td>
     <td>${vc > 0 ? `<span class="tag ouro">${descPagamento(r)}</span>` : `<span class="tag cin">${descPagamento(r)}</span>`}</td>
-    ${comValor ? `<td class="num">${rec > 0.009 ? moeda(rec) : "—"}</td>` : ""}<td class="naoImprimir">${acao}</td></tr>`;
+    ${comValor ? `<td class="num">${rec > 0.009 ? moeda(rec) : "—"}</td>` : ""}<td class="naoImprimir"><button type="button" class="acaoLinha" data-ticket="${r.id}" title="Imprimir ticket (2ª via)">Ticket</button>${acao}</td></tr>`;
 }
 function ligarAcoes(raiz) {
+  raiz.querySelectorAll("[data-ticket]").forEach(b => b.onclick = () => imprimirTicket(vendasPorId[b.dataset.ticket], true));
   raiz.querySelectorAll("[data-alterar-venda]").forEach(b => b.onclick = () => abrirAlteracao("carregamentos", vendasPorId[b.dataset.alterarVenda]));
   raiz.querySelectorAll("[data-alterar-deposito]").forEach(b => b.onclick = () => abrirAlteracao("creditos_antecipados", depositosPorId[b.dataset.alterarDeposito]));
   raiz.querySelectorAll("[data-alterar-despesa]").forEach(b => b.onclick = () => abrirAlteracao("despesas", despesasPorId[b.dataset.alterarDespesa]));
@@ -1336,6 +1343,63 @@ function atualizarPagamento() {
   }
 }
 $("quando").addEventListener("change", atualizarPagamento);
+
+// ---------------- Ticket de conferência (impressora de recibo 58/80 mm) ----------------
+let ultimaVendaTicket = null;
+try { $("autoTicket").checked = localStorage.getItem("autoTicket") === "1"; $("larguraTicket").value = localStorage.getItem("larguraTicket") || "80"; } catch (_) {}
+$("autoTicket").onchange = () => { try { localStorage.setItem("autoTicket", $("autoTicket").checked ? "1" : "0"); } catch (_) {} };
+$("larguraTicket").onchange = () => { try { localStorage.setItem("larguraTicket", $("larguraTicket").value); } catch (_) {} };
+const botaoTicket = (v) => { ultimaVendaTicket = v; return `<button type="button" class="link" onclick="imprimirTicket(ultimaVendaTicket)">Imprimir ticket</button>`; };
+function aposVenda(v) { if ($("autoTicket").checked) imprimirTicket(v); }
+function imprimirTicket(v, segundaVia) {
+  if (!v) return;
+  const veic = veiculoDe(v.placa) || {};
+  const larg = Number($("larguraTicket").value) || 80, f = larg === 58 ? 0.82 : 1;
+  const d = new Date(v.data);
+  const dataTxt = d.toLocaleDateString("pt-BR"), horaTxt = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const porte = (v.porte || veic.porte) === "toco" ? "Toco" : (v.porte || veic.porte) === "truck" ? "Truck" : "";
+  const veiculoTxt = [veic.modelo, veic.cor, porte].filter(Boolean).join(" · ");
+  const vc = Number(v.valor_carteira || 0), recebido = Number(v.valor) - vc;
+  const linha = (a, b) => b ? `<div class="l"><span>${a}</span><b>${esc(b)}</b></div>` : "";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Ticket ${esc(v.placa)}</title><style>
+    @page { size: ${larg}mm auto; margin: 0; }
+    * { box-sizing: border-box; } body { margin: 0; padding: 3mm 3mm 6mm; width: ${larg}mm; font-family: Arial, Helvetica, sans-serif; color: #000; font-size: ${11 * f}pt; }
+    .c { text-align: center; } .t { font-weight: 700; font-size: ${13 * f}pt; letter-spacing: .5px; } .s { font-size: ${9 * f}pt; }
+    .sep { border-top: 1px dashed #000; margin: 2.5mm 0; }
+    .grande { font-size: ${22 * f}pt; font-weight: 800; line-height: 1.1; } .placa { font-size: ${30 * f}pt; font-weight: 900; letter-spacing: 2px; font-family: "Courier New", monospace; }
+    .nome { font-size: ${16 * f}pt; font-weight: 700; line-height: 1.15; }
+    .l { display: flex; justify-content: space-between; gap: 2mm; margin: 1mm 0; } .l span { flex: none; } .l b { text-align: right; }
+    .ass { margin-top: 9mm; border-top: 1px solid #000; padding-top: 1mm; text-align: center; font-size: ${9 * f}pt; }
+  </style></head><body>
+    <div class="c t">MINERAÇÃO AREIA LIMPA</div>
+    <div class="c s">Ticket de conferência de retirada${segundaVia ? " · 2ª VIA" : ""}${v.id ? " · nº " + v.id : ""}</div>
+    <div class="sep"></div>
+    <div class="c grande">${dataTxt}</div>
+    <div class="c grande">${horaTxt}</div>
+    <div class="sep"></div>
+    <div class="c s">PLACA</div><div class="c placa">${esc(v.placa)}</div>
+    <div class="c nome">${esc(veic.cliente || veic.motorista || "Veículo não cadastrado")}</div>
+    ${veic.cliente && veic.motorista ? `<div class="c">Motorista: <b>${esc(veic.motorista)}</b></div>` : ""}
+    ${veiculoTxt ? `<div class="c">${esc(veiculoTxt)}</div>` : ""}
+    <div class="sep"></div>
+    ${linha("Material", NOME_MATERIAL[v.produto] || "Areia")}
+    ${linha("Pagamento", descPagamento(v))}
+    ${vc > 0.009 ? linha("Da carteira", moeda(vc)) : ""}
+    ${v.diferenca ? linha("Para a carteira", moeda(v.diferenca)) : ""}
+    <div class="c s" style="margin-top:2mm">VALOR</div><div class="c grande">${moeda(v.valor)}</div>
+    ${vc > 0.009 && recebido > 0.009 ? `<div class="c s">Recebido agora: ${moeda(recebido)}</div>` : ""}
+    ${(v.observacao || "").replace(/\s*\[web\]\s*$/, "") ? `<div class="sep"></div><div class="s">Obs.: ${esc(v.observacao.replace(/\s*\[web\]\s*$/, ""))}</div>` : ""}
+    <div class="sep"></div>
+    <div class="s">Lançado por: ${esc(perfil?.nome || usuario?.email || "")}</div>
+    <div class="ass">Conferido na saída (assinatura)</div>
+  </body></html>`;
+  const fr = document.createElement("iframe");
+  fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  document.body.appendChild(fr);
+  fr.contentDocument.open(); fr.contentDocument.write(html); fr.contentDocument.close();
+  setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } finally { setTimeout(() => fr.remove(), 60000); } }, 250);
+}
+window.imprimirTicket = imprimirTicket;
 $("formCarga").onsubmit = async (ev) => {
   ev.preventDefault();
   let placa = normalizar($("placa").value);
@@ -1370,21 +1434,24 @@ $("formCarga").onsubmit = async (ev) => {
     const { data: dup } = await db.from("carregamentos").select("id").eq("placa", placa).gte("data", de).lte("data", ate).limit(1);
     if (dup?.length && !confirm(`Já existe uma carga de ${placa} perto desse horário. Lançar mesmo assim?`)) return;
     if (ex) {
-      const { error } = await db.rpc("lancar_venda_com_diferenca", { venda: {
-        data: quando.toISOString(), placa, valor: ex.ref, produto: materialSel(), porte: porteSel(),
-        forma_pagamento: pg.forma, observacao: ($("obs").value.trim() + " [web]").trim() }, diferenca: ex.dif });
+      const venda = { data: quando.toISOString(), placa, valor: ex.ref, produto: materialSel(), porte: porteSel(),
+        forma_pagamento: pg.forma, observacao: ($("obs").value.trim() + " [web]").trim() };
+      const { data: ret, error } = await db.rpc("lancar_venda_com_diferenca", { venda, diferenca: ex.dif });
       if (error) throw error;
-      msg("msgCarga", `Venda de ${placa} lançada às ${hora(quando)} · ${NOME_MATERIAL[materialSel()]} · ${moeda(ex.ref)} · ${NOME_FORMA[pg.forma]}. <b>${moeda(ex.dif)}</b> incluídos na carteira do cliente.`, "ok");
+      const vt = { ...venda, id: ret?.venda, diferenca: ex.dif };
+      msg("msgCarga", `Venda de ${placa} lançada às ${hora(quando)} · ${NOME_MATERIAL[materialSel()]} · ${moeda(ex.ref)} · ${NOME_FORMA[pg.forma]}. <b>${moeda(ex.dif)}</b> incluídos na carteira do cliente. ${botaoTicket(vt)}`, "ok");
+      aposVenda(vt);
       $("placa").value = ""; $("obs").value = ""; $("quando").value = agoraLocal();
       await carregarBase(); atualizarPlaca(); $("placa").focus();
       return;
     }
-    const { error } = await db.from("carregamentos").insert({
-      data: quando.toISOString(), placa, valor: pg.valor, produto: materialSel(), porte: porteSel(),
+    const venda = { data: quando.toISOString(), placa, valor: pg.valor, produto: materialSel(), porte: porteSel(),
       forma_pagamento: pg.forma, valor_carteira: pg.valor_carteira, forma_complemento: pg.forma_complemento,
-      usou_credito: pg.valor_carteira > 0, observacao: ($("obs").value.trim() + " [web]").trim() });
+      usou_credito: pg.valor_carteira > 0, observacao: ($("obs").value.trim() + " [web]").trim() };
+    const { data: ins, error } = await db.from("carregamentos").insert(venda).select("id").maybeSingle();
     if (error) throw error;
-    msg("msgCarga", `Venda de ${placa} lançada às ${hora(quando)} · ${NOME_MATERIAL[materialSel()]} · ${moeda(pg.valor)} · ${descPagamento({ valor: pg.valor, valor_carteira: pg.valor_carteira, forma_pagamento: pg.forma, forma_complemento: pg.forma_complemento })}.`, "ok");
+    msg("msgCarga", `Venda de ${placa} lançada às ${hora(quando)} · ${NOME_MATERIAL[materialSel()]} · ${moeda(pg.valor)} · ${descPagamento({ valor: pg.valor, valor_carteira: pg.valor_carteira, forma_pagamento: pg.forma, forma_complemento: pg.forma_complemento })}. ${botaoTicket({ ...venda, id: ins?.id })}`, "ok");
+    aposVenda({ ...venda, id: ins?.id });
     $("placa").value = ""; $("obs").value = ""; $("quando").value = agoraLocal();
     await carregarBase(); atualizarPlaca(); $("placa").focus();
   } catch (e) { msg("msgCarga", traduzir(e)); }
