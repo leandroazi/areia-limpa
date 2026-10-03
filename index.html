@@ -205,6 +205,15 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
 .tabPrecos { display: grid; grid-template-columns: auto 1fr 1fr; gap: 6px 8px; align-items: center; margin-top: 8px; }
 .tabPrecos input { margin: 0; }
 .tabPrecos b { font-size: 13px; }
+.impCaixa { border-top: 1px solid var(--borda, #E5E7EB); margin-top: 14px; padding-top: 10px; }
+.impCaixa table td { vertical-align: top; font-size: 13px; }
+.impCaixa select, .impCaixa input[type=number] { width: auto; margin: 0; padding: 4px 6px; font-size: 13px; }
+.impCaixa input[type=number] { width: 84px; }
+.impCaixa tr.apagada td { opacity: .45; }
+.impCaixa .imp-dia { margin-top: 14px; }
+.impCaixa .imp-dia h3 { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 15px; margin: 0 0 6px; }
+.impCaixa .tag { margin: 2px 2px 0 0; }
+.impCaixa small { color: var(--sec); }
 </style>
 </head>
 <body>
@@ -290,6 +299,22 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       </div>
       <div id="msgCaixa" class="naoImprimir"></div>
       <div id="caixaAlteracoes"></div>
+      <div class="impCaixa naoImprimir" id="boxImpCaixa">
+        <button class="btn sec" id="btnImpCaixa" type="button" style="margin-top:0">Importar planilha do caixa (Excel)</button>
+        <div id="painelImpCaixa" class="oculto">
+          <div class="sub" style="margin:8px 0">Envie a planilha da secretária (DATA, PLACA, MOTORISTA, VEÍCULO, MATERIAL, VALOR, VIA DE PG, OBSERVAÇÃO). Pode enviar vários dias de uma vez. O sistema confere as placas com o cadastro e com a câmera, compara o Pix com o extrato do banco e não lança de novo o que já estiver no sistema.</div>
+          <label for="arqImpCaixa">Planilhas do caixa</label>
+          <input id="arqImpCaixa" type="file" accept=".xls,.xlsx,.csv" multiple>
+          <div id="msgImpCaixa"></div>
+          <div id="previaImpCaixa" class="oculto">
+            <div id="boxDiaPadrao"><label for="impDiaPadrao">Dia para linhas com data inválida</label><input id="impDiaPadrao" type="date"><div class="sub">Vazio: o sistema corrige sozinho (ex.: 31/09 → 01/10).</div></div>
+            <div id="impResumo"></div>
+            <div id="impDias"></div>
+            <button class="btn" id="btnLancarImp" type="button">Lançar</button>
+            <div id="impExtras"></div>
+          </div>
+        </div>
+      </div>
       <h2 style="margin-top:14px">Vendas do dia</h2>
       <table>
         <thead><tr><th>Hora</th><th>Placa</th><th>Cliente</th><th>Pagamento</th><th class="num">Entrou</th><th class="naoImprimir"></th></tr></thead>
@@ -1370,6 +1395,322 @@ function atualizarPagamento() {
   }
 }
 $("quando").addEventListener("change", atualizarPagamento);
+
+// ---------------- Importar planilha do caixa (Excel da secretária) + conferência com câmera e banco ----------------
+let impCaixa = null;   // { arquivos, linhas, notas, ctx }
+const URL_XLSX = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+$("btnImpCaixa").onclick = () => $("painelImpCaixa").classList.toggle("oculto");
+function numPlanilha(v) {
+  if (typeof v === "number") return v;
+  const s = String(v ?? "").replace(/[R$\s]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
+  return s && isFinite(Number(s)) ? Number(s) : NaN;
+}
+/** Data da planilha: número do Excel, dd/mm, dd/mm/aaaa ou aaaa-mm-dd. Data impossível (ex.: 31/09) volta vazia. */
+function dataPlanilha(v, anoPadrao, sugerir) {
+  let a, m, d;
+  if (typeof v === "number" && v > 20000 && v < 90000) return new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10);
+  const t = String(v ?? "").trim();
+  let r = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (r) [a, m, d] = [+r[1], +r[2], +r[3]];
+  else if ((r = t.match(/^(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?$/))) [d, m, a] = [+r[1], +r[2], r[3] ? (r[3].length === 2 ? 2000 + +r[3] : +r[3]) : anoPadrao];
+  else return null;
+  const x = new Date(Date.UTC(a, m - 1, d));
+  if (sugerir) return m >= 1 && m <= 12 && d >= 1 && d <= 31 ? x.toISOString().slice(0, 10) : null;   // 31/09 → 01/10
+  return x.getUTCMonth() === m - 1 && x.getUTCDate() === d ? x.toISOString().slice(0, 10) : null;
+}
+function formaPlanilha(t) {
+  const s = semAcentoTxt(t);
+  if (!s) return { forma: "pix", vazio: true };
+  const misto = /pix/.test(s) && /din|espec/.test(s);
+  if (/cartao|maquin|debito/.test(s)) return { forma: /debito/.test(s) ? "debito" : "credito" };
+  if (/cred|carteira|antecip|saldo/.test(s)) return { forma: "carteira" };
+  if (/pix/.test(s)) return { forma: "pix", misto };
+  if (/din|espec/.test(s)) return { forma: "dinheiro" };
+  return { forma: "pix", desconhecida: true };
+}
+const nomeConfere = (nome, v) => {
+  const n = semAcentoTxt(nome).replace(/\s+/g, " ");
+  if (!n || !v) return false;
+  return [v.motorista, v.cliente].some(x => {
+    const t = semAcentoTxt(x).replace(/\s+/g, " ");
+    return t && (t === n || t.split(" ")[0] === n.split(" ")[0] || t.includes(n) || n.includes(t));
+  });
+};
+/** Placa da planilha: sugere a placa cadastrada parecida (ou cujo motorista confere com o nome lançado). */
+function sugerirPlacaCaixa(p, nome) {
+  const v = veiculoDe(p);
+  if (v && (!semAcentoTxt(nome) || nomeConfere(nome, v))) return null;
+  const cands = veiculos.filter(x => x.tipo !== "ignorado" && x.placa !== p)
+    .map(x => ({ x, d: distanciaPlaca(p, x.placa), n: nomeConfere(nome, x) }))
+    .filter(c => c.d <= 1 || (c.n && c.d <= 2)).sort((a, b) => (b.n - a.n) || (a.d - b.d));
+  if (!cands.length) return null;
+  const c = cands[0];
+  if (v) return c.n && c.d <= 1 ? { placa: c.x.placa, forte: false, motivo: `o nome não confere com o cadastro de ${p}; ${c.x.placa} é de ${nomeCliente(c.x)}` } : null;
+  return { placa: c.x.placa, forte: c.n || (cands.length === 1 && c.d <= 0.5), motivo: c.n ? "placa parecida e o nome confere" : "placa parecida já cadastrada" };
+}
+async function lerPlanilhaCaixa(f) {
+  const ext = f.name.split(".").pop().toLowerCase();
+  const wb = ext === "csv"
+    ? XLSX.read((await f.text()).replace(/^﻿/, ""), { type: "string", raw: true })
+    : XLSX.read(await f.arrayBuffer(), { type: "array" });
+  const ano = new Date().getFullYear(), linhas = [], notas = [];
+  for (const nomeAba of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[nomeAba], { header: 1, raw: true, defval: "" });
+    const iCab = rows.slice(0, 25).findIndex(r => r.some(c => /placa/.test(semAcentoTxt(c))) && r.some(c => /valor|data/.test(semAcentoTxt(c))));
+    if (iCab < 0) continue;
+    const cab = rows[iCab].map(c => semAcentoTxt(c));
+    const col = (re, nao) => cab.findIndex(h => h && re.test(h) && !(nao && nao.test(h)));
+    const C = { data: col(/^data|^dia$/), hora: col(/^hora/), placa: col(/placa/), nome: col(/motorista|cliente|nome|condutor/),
+      veic: col(/veiculo|cacamba|porte|^tipo/), mat: col(/material|areia|produto/), valor: col(/valor|preco/, /saldo/),
+      forma: col(/via|forma|pag/), obs: col(/obs/), saldo: col(/saldo|acumulado|total/) };
+    const cel = (r, k) => C[k] >= 0 ? r[C[k]] : "";
+    rows.slice(iCab + 1).forEach((r, j) => {
+      const linha = iCab + j + 2;
+      const placa = normalizar(textoCelula(cel(r, "placa")));
+      const nome = textoCelula(cel(r, "nome")).toUpperCase();
+      const valor = numPlanilha(cel(r, "valor"));
+      if (!placaValida(placa)) {
+        // linha de modelo em branco (só caçamba/material/pagamento preenchidos) é ignorada
+        if (!placa && !nome && !isFinite(valor) && !textoCelula(cel(r, "obs"))) return;
+        const txt = r.map(textoCelula).filter((x, k) => x && k !== C.data && k !== C.saldo && !/^\d{1,3}$/.test(x)).join(" · ");
+        if (txt) notas.push({ arquivo: f.name, linha, placa, texto: txt, valor: isFinite(valor) ? valor : null, forma: textoCelula(cel(r, "forma")) });
+        return;
+      }
+      const dBruto = cel(r, "data"), dia = dataPlanilha(dBruto, ano), diaSug = dia ? null : dataPlanilha(dBruto, ano, true);
+      const fp = formaPlanilha(cel(r, "forma")), veic = semAcentoTxt(cel(r, "veic"));
+      let hh = "";
+      const h = cel(r, "hora");
+      if (typeof h === "number" && h < 1) { const m = Math.round(h * 1440); hh = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; }
+      else if (/^\d{1,2}[:h]\d{2}/.test(String(h))) { const [a, b] = String(h).split(/[:h]/); hh = `${a.padStart(2, "0")}:${b.slice(0, 2)}`; }
+      linhas.push({ arquivo: f.name, linha, dia, diaSug, diaTexto: textoCelula(dBruto), horaPlanilha: hh, placaOrig: placa, nome,
+        porte: /toco|2 ?eixo/.test(veic) ? "toco" : "truck", veicTexto: textoCelula(cel(r, "veic")),
+        produto: /suja/.test(semAcentoTxt(cel(r, "mat"))) ? "areia_suja" : "areia_limpa",
+        valorPlanilha: isFinite(valor) && valor > 0 ? r2(valor) : null, formaTexto: textoCelula(cel(r, "forma")), ...fp,
+        obs: textoCelula(cel(r, "obs")) });
+    });
+  }
+  return { linhas, notas };
+}
+$("arqImpCaixa").onchange = async () => {
+  const fs = [...$("arqImpCaixa").files];
+  $("previaImpCaixa").classList.add("oculto"); msg("msgImpCaixa", ""); impCaixa = null;
+  if (!fs.length) return;
+  try {
+    msg("msgImpCaixa", "Lendo as planilhas…", "aviso");
+    await carregarScript(URL_XLSX);
+    const linhas = [], notas = [];
+    for (const f of fs) { const r = await lerPlanilhaCaixa(f); linhas.push(...r.linhas); notas.push(...r.notas); }
+    if (!linhas.length) throw new Error("Não encontrei vendas nessas planilhas (procurei as colunas PLACA, DATA e VALOR).");
+    linhas.forEach((l, i) => {
+      l.i = i;
+      l.sug = sugerirPlacaCaixa(l.placaOrig, l.nome);
+      l.placa = l.sug?.forte ? l.sug.placa : l.placaOrig;
+      l.valorEsc = null; l.incluirEsc = null;
+    });
+    // linha sem data válida: usa a data das outras linhas do mesmo arquivo (ou a correção automática, ex.: 31/09 → 01/10)
+    const porArq = {};
+    linhas.forEach(l => { if (l.dia) (porArq[l.arquivo] ||= {})[l.dia] = ((porArq[l.arquivo] || {})[l.dia] || 0) + 1; });
+    linhas.forEach(l => { if (!l.dia) l.diaSug = Object.entries(porArq[l.arquivo] || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || l.diaSug; });
+    $("impDiaPadrao").value = ""; $("impDiaPadrao").max = hojeISO();
+    $("boxDiaPadrao").classList.toggle("oculto", linhas.every(l => l.dia));
+    impCaixa = { arquivos: fs.map(f => f.name), linhas, notas };
+    await analisarImpCaixa();
+    msg("msgImpCaixa", "");
+  } catch (e) { msg("msgImpCaixa", traduzir(e)); }
+};
+$("impDiaPadrao").onchange = () => impCaixa && analisarImpCaixa();
+async function analisarImpCaixa() {
+  const L = impCaixa.linhas, padrao = $("impDiaPadrao").value;
+  L.forEach(l => l.diaF = l.dia || padrao || l.diaSug || hojeISO());
+  const dias = [...new Set(L.map(l => l.diaF))].sort(), de = dias[0], ate = dias[dias.length - 1];
+  const fimAte = new Date(new Date(`${ate}T00:00:00`).getTime() + 864e5).toISOString();
+  const gestor = perfil?.papel === "gestor";
+  const [vendas, lpr, ext, fech] = await Promise.all([
+    buscarTudo(() => db.from("carregamentos").select("id,data,placa,valor,forma_pagamento").eq("ficticio", false)
+      .gte("data", new Date(`${de}T00:00:00`).toISOString()).lt("data", fimAte).order("data")),
+    pode("importar_lpr") ? db.rpc("dados_lpr", { de, ate }) : Promise.resolve({ error: { message: "sem permissão" } }),
+    gestor ? db.from("extrato_bancario").select("data,valor,tipo,ignorar").gte("data", de).lte("data", ate) : Promise.resolve({ data: null }),
+    db.from("caixa_fechamentos").select("dia").gte("dia", de).lte("dia", ate),
+  ]);
+  impCaixa.ctx = { dias, vendas: vendas || [], lpr: lpr.error ? null : lpr.data, extrato: ext.data, fechados: new Set((fech.data || []).map(x => x.dia)) };
+  calcularImpCaixa();
+}
+const hhmm = (t) => new Date(t).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+function calcularImpCaixa() {
+  const { linhas: L, ctx } = impCaixa;
+  // já lançadas no sistema (mesmo dia e placa): não lança de novo
+  const ja = {};
+  for (const v of ctx.vendas) { const k = diaLocal(v.data) + "|" + v.placa; (ja[k] ||= []).push(v); }
+  const usados = {};
+  for (const l of L) {
+    const k = l.diaF + "|" + l.placa;
+    usados[k] = (usados[k] || 0) + 1;
+    l.jaLancada = usados[k] <= (ja[k]?.length || 0);
+    l.jaVenda = l.jaLancada ? ja[k][usados[k] - 1] : null;
+    const v = veiculoDe(l.placa);
+    l.bloqueado = v?.situacao === "bloqueado";
+    l.valor = l.valorEsc ?? l.valorPlanilha ?? precoSugerido(l.placa, l.porte, l.produto).valor;
+    l.valorDaTabela = l.valorEsc == null && l.valorPlanilha == null && l.valor > 0;
+    l.formaF = l.formaEsc || l.forma;
+    const ref = precoSugerido(l.placa, l.porte, l.produto).valor;
+    l.pareceDeposito = ref > 0 && l.valorEsc == null && l.valor > ref * 1.5 && l.formaF !== "carteira";
+    l.incluir = l.incluirEsc ?? (!l.jaLancada && !l.bloqueado && !l.pareceDeposito && l.valor > 0);
+    l.cam = null; l.camLida = null;
+  }
+  // câmera: passagens do dia × vendas (as já lançadas usam as primeiras passagens)
+  const sobras = {};
+  if (ctx.lpr) {
+    const pass = passagens(ctx.lpr.leituras, ctx.lpr.correcoes || []).filter(p => p.placa && placaValida(p.placa) && veiculoDe(p.placa)?.tipo !== "ignorado");
+    const porK = {};
+    for (const p of pass) (porK[diaLocal(p.ini) + "|" + p.placa] ||= []).push(p);
+    for (const [k, ps] of Object.entries(porK)) {
+      ps.sort((a, b) => a.ini - b.ini);
+      const nJa = ja[k]?.length || 0;
+      const rows = L.filter(l => l.diaF + "|" + l.placa === k && !l.jaLancada);
+      rows.forEach((l, j) => { if (ps[nJa + j]) l.cam = ps[nJa + j].ini; });
+      ps.slice(nJa + rows.length).forEach(p => (sobras[k.split("|")[0]] ||= []).push(p));
+    }
+    // venda sem passagem: procura passagem que sobrou com placa parecida (leitura ou digitação errada)
+    for (const l of L.filter(x => !x.cam && !x.jaLancada)) {
+      const s = sobras[l.diaF] || [];
+      const i = s.findIndex(p => distanciaPlaca(p.placa, l.placa) <= 1);
+      if (i >= 0) { l.cam = s[i].ini; l.camLida = s[i].placa; s.splice(i, 1); }
+    }
+  }
+  // horário: câmera > hora da planilha > entre as vizinhas na ordem da planilha
+  for (const d of ctx.dias) {
+    const R = L.filter(l => l.diaF === d);
+    const t = R.map(l => l.jaVenda ? new Date(l.jaVenda.data).getTime() : l.cam ? l.cam : l.horaPlanilha ? new Date(`${d}T${l.horaPlanilha}:00`).getTime() : null);
+    R.forEach((l, j) => {
+      if (t[j] == null) {
+        let a = j - 1; while (a >= 0 && t[a] == null) a--;
+        let b = j + 1; while (b < R.length && t[b] == null) b++;
+        const ini = a >= 0 ? t[a] : new Date(`${d}T07:00:00`).getTime(), fim = b < R.length ? t[b] : Math.max(ini + 60 * 6e4, new Date(`${d}T17:00:00`).getTime());
+        t[j] = ini + (fim - ini) * (j - a) / (b - a);
+      }
+      l.quando = new Date(Math.round(t[j] / 6e4) * 6e4);
+      if (diaLocal(l.quando) !== d) l.quando = new Date(`${d}T12:00:00`);
+    });
+  }
+  // carteira: saldo corrente por placa
+  const saldo = {};
+  for (const l of L) {
+    if (!l.incluir || l.formaF !== "carteira") { l.semSaldo = false; continue; }
+    saldo[l.placa] ??= saldoDe(l.placa);
+    l.semSaldo = saldo[l.placa] + 0.009 < l.valor;
+    saldo[l.placa] -= l.valor;
+  }
+  impCaixa.sobras = sobras;
+  renderImpCaixa();
+}
+const NOME_FORMA_PLAN = { pix: "Pix", dinheiro: "Dinheiro", credito: "Cartão crédito", debito: "Cartão débito", carteira: "Carteira (crédito antecipado)" };
+function renderImpCaixa() {
+  const { linhas: L, notas, ctx, sobras } = impCaixa;
+  const sel = L.filter(l => l.incluir);
+  const nJa = L.filter(l => l.jaLancada).length, nSug = L.filter(l => l.sug).length;
+  const nCam = L.filter(l => !l.jaLancada && l.cam).length, nSemCam = L.filter(l => !l.jaLancada && !l.cam).length;
+  const totSobra = Object.values(sobras).reduce((t, s) => t + s.length, 0);
+  $("impResumo").innerHTML = `<div class="caixa" style="margin-top:10px">
+    <div><span>Linhas de venda</span><b>${L.length}</b></div>
+    <div><span>Para lançar</span><b class="ent">${sel.length} · ${moeda(sel.reduce((t, l) => t + (l.valor || 0), 0))}</b></div>
+    <div><span>Já no sistema</span><b>${nJa}</b></div>
+    <div><span>Placas a conferir</span><b class="${nSug ? "sai" : ""}">${nSug}</b></div>
+    ${ctx.lpr ? `<div><span>Batem com a câmera</span><b>${nCam}</b></div>
+    <div><span>Sem passagem na câmera</span><b>${nSemCam}</b></div>
+    <div><span>Passou na câmera e não está na planilha</span><b class="${totSobra ? "sai" : ""}">${totSobra}</b></div>` : ""}</div>
+    ${ctx.lpr ? "" : '<div class="sub">Conferência com a câmera indisponível para este usuário.</div>'}`;
+  const ext = ctx.extrato, diaArq = {};
+  for (const l of L) diaArq[l.arquivo] ??= l.diaF;
+  $("impDias").innerHTML = ctx.dias.map(d => {
+    const R = L.filter(l => l.diaF === d);
+    const soma = (f) => r2(R.filter(l => l.formaF === f).reduce((t, l) => t + (l.valor || 0), 0));
+    const depPix = r2(notas.filter(n => n.valor > 0 && /pix/i.test(n.forma) && diaArq[n.arquivo] === d).reduce((t, n) => t + n.valor, 0));
+    let banco = "";
+    if (ext) {
+      const bPix = r2(ext.filter(e => e.data === d && e.tipo === "pix" && !e.ignorar).reduce((t, e) => t + Number(e.valor), 0));
+      const pPix = r2(soma("pix") + depPix), dif = r2(bPix - pPix);
+      banco = ext.some(e => e.data === d)
+        ? `<div><span>Pix no banco</span><b>${moeda(bPix)}</b></div><div><span>Diferença banco − planilha</span><b class="${Math.abs(dif) > 0.009 ? "sai" : "ent"}">${dif > 0 ? "+" : ""}${moeda(dif)}</b></div>`
+        : `<div><span>Pix no banco</span><b class="sub">extrato não enviado</b></div>`;
+    }
+    const sb = (sobras[d] || []);
+    return `<div class="imp-dia"><h3><span>${new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+      <span class="sub">${R.length} cargas${ctx.fechados.has(d) ? ' · <b class="sai">caixa já fechado</b> (vai ficar registrado como incluído após o fechamento)' : ""}</span></h3>
+      <div class="caixa"><div><span>Pix na planilha</span><b>${moeda(soma("pix") + depPix)}</b></div><div><span>Dinheiro</span><b>${moeda(soma("dinheiro"))}</b></div>
+        ${soma("credito") + soma("debito") ? `<div><span>Cartão</span><b>${moeda(soma("credito") + soma("debito"))}</b></div>` : ""}
+        <div><span>Carteira (não entra no caixa)</span><b>${moeda(soma("carteira"))}</b></div>${banco}</div>
+      <div class="rolagem"><table><thead><tr><th></th><th>Hora</th><th>Placa</th><th>Nome</th><th>Carga</th><th class="num">Valor</th><th>Pagamento</th></tr></thead><tbody>
+      ${R.map(linhaImpCaixa).join("")}</tbody></table></div>
+      ${sb.length ? `<div class="sub" style="margin-top:6px"><b>Passou na câmera e não está na planilha:</b> ${sb.map(p => `<span class="pl">${esc(p.placa)}</span> ${hhmm(p.ini)}`).join(" · ")}</div>` : ""}</div>`;
+  }).join("");
+  $("impExtras").innerHTML = notas.length ? `<h2 style="margin-top:16px">Linhas que não são vendas (não serão lançadas)</h2>
+    <div class="sub">Anotações, depósitos sem placa ou placas incompletas. Depósito em carteira se lança pela aba Carteira.</div>
+    ${notas.map(n => `<div class="conf-item"><span>${esc(n.texto)}</span><span class="sub">${esc(n.arquivo)} · linha ${n.linha}${n.valor ? " · " + moeda(n.valor) : ""}</span></div>`).join("")}` : "";
+  const n = sel.length;
+  $("btnLancarImp").disabled = !n;
+  $("btnLancarImp").textContent = n ? `Lançar ${n} venda${n > 1 ? "s" : ""} · ${moeda(sel.reduce((t, l) => t + (l.valor || 0), 0))}` : "Nada para lançar";
+  $("previaImpCaixa").classList.remove("oculto");
+  ligarImpCaixa();
+}
+function linhaImpCaixa(l) {
+  const v = veiculoDe(l.placa), tags = [];
+  if (l.jaLancada) tags.push('<span class="tag ok">já no sistema</span>');
+  if (l.bloqueado) tags.push('<span class="tag bloq">⛔ bloqueado</span>');
+  if (!v) tags.push('<span class="tag aviso">sem cadastro</span>');
+  else if (l.nome && !nomeConfere(l.nome, v)) tags.push('<span class="tag aviso">nome difere do cadastro</span>');
+  if (!l.jaLancada && impCaixa.ctx.lpr) tags.push(l.cam ? `<span class="tag ok">câmera ${hhmm(l.cam)}${l.camLida ? " (leu " + esc(l.camLida) + ")" : ""}</span>` : '<span class="tag cin">sem câmera</span>');
+  if (l.pareceDeposito) tags.push(`<span class="tag aviso">valor muito acima do preço: parece depósito na carteira</span>`);
+  if (l.semSaldo) tags.push(`<span class="tag bloq">carteira sem saldo (${moeda(saldoDe(l.placa))})</span>`);
+  if (l.misto) tags.push(`<span class="tag aviso">pagamento misto: ${esc(l.formaTexto)}</span>`);
+  if (l.desconhecida) tags.push(`<span class="tag aviso">"${esc(l.formaTexto)}"?</span>`);
+  if (!l.dia) tags.push(`<span class="tag aviso">data na planilha: "${esc(l.diaTexto || "vazia")}"</span>`);
+  const placaCel = l.sug
+    ? `<select data-imp-placa="${l.i}"><option value="${esc(l.placaOrig)}"${l.placa === l.placaOrig ? " selected" : ""}>${esc(l.placaOrig)} (planilha)</option>
+        <option value="${esc(l.sug.placa)}"${l.placa === l.sug.placa ? " selected" : ""}>${esc(l.sug.placa)} (sugerida)</option></select><br><small>${esc(l.sug.motivo)}</small>`
+    : `<span class="pl">${esc(l.placa)}</span>`;
+  const formas = ["pix", "dinheiro", "credito", "debito", "carteira"].map(f => `<option value="${f}"${l.formaF === f ? " selected" : ""}>${NOME_FORMA_PLAN[f]}</option>`).join("");
+  return `<tr class="${l.incluir ? "" : "apagada"}"><td><input type="checkbox" data-imp-inc="${l.i}"${l.incluir ? " checked" : ""} title="Lançar esta venda"></td>
+    <td>${hhmm(l.quando)}${l.cam || l.jaVenda ? "" : "<br><small>estimada</small>"}</td>
+    <td>${placaCel}<div>${tags.join("")}</div></td>
+    <td>${esc(l.nome || "—")}${v ? `<br><small>cadastro: ${esc(nomeCliente(v))}</small>` : ""}</td>
+    <td>${l.porte === "toco" ? "Toco" : "Truck"}${/bi|carg/i.test(l.veicTexto) ? ` <small>(${esc(l.veicTexto.toLowerCase())})</small>` : ""}<br><small>${NOME_MATERIAL[l.produto]}</small></td>
+    <td class="num"><input type="number" min="1" step="0.01" data-imp-valor="${l.i}" value="${l.valor ?? ""}">${l.valorDaTabela ? "<br><small>preço da tabela</small>" : ""}</td>
+    <td><select data-imp-forma="${l.i}">${formas}</select>${l.obs ? `<br><small>${esc(l.obs)}</small>` : ""}</td></tr>`;
+}
+function ligarImpCaixa() {
+  const L = impCaixa.linhas;
+  $$("[data-imp-inc]").forEach(c => c.onchange = () => { L[c.dataset.impInc].incluirEsc = c.checked; calcularImpCaixa(); });
+  $$("[data-imp-placa]").forEach(s => s.onchange = () => { L[s.dataset.impPlaca].placa = s.value; L[s.dataset.impPlaca].incluirEsc = null; calcularImpCaixa(); });
+  $$("[data-imp-forma]").forEach(s => s.onchange = () => { L[s.dataset.impForma].formaEsc = s.value; calcularImpCaixa(); });
+  $$("[data-imp-valor]").forEach(s => s.onchange = () => { const v = Number(s.value); L[s.dataset.impValor].valorEsc = v > 0 ? r2(v) : null; calcularImpCaixa(); });
+}
+$("btnLancarImp").onclick = async () => {
+  if (!impCaixa) return;
+  const sel = impCaixa.linhas.filter(l => l.incluir);
+  if (!sel.length) return;
+  const semSaldo = sel.filter(l => l.semSaldo).length, semCad = sel.filter(l => !veiculoDe(l.placa)).length;
+  const avisos = [semCad ? `${semCad} placa(s) sem cadastro` : "", semSaldo ? `${semSaldo} venda(s) na carteira sem saldo suficiente` : ""].filter(Boolean);
+  if (!confirm(`Lançar ${sel.length} venda(s), total ${moeda(sel.reduce((t, l) => t + l.valor, 0))}?${avisos.length ? "\n\nAtenção: " + avisos.join("; ") + "." : ""}`)) return;
+  $("btnLancarImp").disabled = true;
+  let ok = 0; const erros = [];
+  for (const l of sel) {
+    const v = veiculoDe(l.placa);
+    const obs = [l.obs, l.nome && (!v || !nomeConfere(l.nome, v)) ? "Motorista: " + l.nome : "",
+      l.placa !== l.placaOrig ? `placa na planilha: ${l.placaOrig}` : "", l.misto ? "pagamento: " + l.formaTexto : ""].filter(Boolean).join(" · ");
+    const venda = { data: l.quando.toISOString(), placa: l.placa, valor: l.valor, produto: l.produto, porte: l.porte,
+      forma_pagamento: l.formaF, valor_carteira: l.formaF === "carteira" ? l.valor : 0, usou_credito: l.formaF === "carteira",
+      observacao: (obs + " [planilha]").trim().slice(0, 300) };
+    const { error } = await db.from("carregamentos").insert(venda);
+    if (error) erros.push(`${l.placa} (${dataBR(l.diaF)}): ${traduzir(error)}`); else ok++;
+    msg("msgImpCaixa", `Lançando… ${ok + erros.length} de ${sel.length}`, "aviso");
+  }
+  msg("msgImpCaixa", `<b>${ok}</b> venda${ok === 1 ? "" : "s"} lançada${ok === 1 ? "" : "s"}.` + (erros.length ? `<br>Não lançadas (${erros.length}):<br>${erros.map(esc).join("<br>")}` : ""), erros.length ? "aviso" : "ok");
+  $("msgImpCaixa").scrollIntoView({ behavior: "smooth", block: "center" });
+  impCaixa.linhas.forEach(l => { l.incluirEsc = null; });
+  try { await Promise.all([carregarHoje(), carregarSaldos()]); } catch (_) {}
+  if (!$("cartaoCaixa").classList.contains("oculto")) carregarCaixa();
+  await analisarImpCaixa();
+};
 
 // ---------------- Ticket de conferência (impressora de recibo 58/80 mm) ----------------
 let ultimaVendaTicket = null;
