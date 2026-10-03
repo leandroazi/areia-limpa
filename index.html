@@ -537,7 +537,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
   <section id="telaDespesas" class="aba oculto">
     <div class="cartao oculto" id="cartaoExtrato">
       <h2>Conciliação bancária</h2>
-      <div class="sub">Envie o extrato do banco (OFX, CSV, Excel ou PDF). Só as entradas são usadas: Pix recebido e vendas no cartão. Somadas ao dinheiro em espécie, devem bater com o caixa das vendas.</div>
+      <div class="sub">Envie o extrato do banco (OFX, CSV, Excel ou PDF). Só as entradas são usadas: Pix recebido e vendas no cartão. Somadas ao dinheiro em espécie, devem bater com o caixa das vendas. A planilha da secretária não vai aqui: use <b>Caixa → Importar planilha do caixa</b>.</div>
       <label for="arqExtrato">Extrato bancário</label>
       <input id="arqExtrato" type="file" accept=".ofx,.qfx,.csv,.txt,.xls,.xlsx,.pdf">
       <div id="msgExtrato"></div>
@@ -1519,6 +1519,25 @@ $("arqImpCaixa").onchange = async () => {
   } catch (e) { msg("msgImpCaixa", traduzir(e)); }
 };
 $("impDiaPadrao").onchange = () => impCaixa && analisarImpCaixa();
+async function ehPlanilhaCaixa(f) {
+  try {
+    await carregarScript(URL_XLSX);
+    const ext = f.name.split(".").pop().toLowerCase();
+    const wb = ext === "csv" ? XLSX.read((await f.text()).replace(/^\uFEFF/, ""), { type: "string", raw: true }) : XLSX.read(await f.arrayBuffer(), { type: "array" });
+    return wb.SheetNames.some(n => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: "" }).slice(0, 25)
+      .some(r => r.some(c => /^placa/.test(semAcentoTxt(c)))));
+  } catch (_) { return false; }
+}
+/** Abre Cargas → Caixa → Importar planilha já com os arquivos escolhidos. */
+function levarParaImpCaixa(arquivos) {
+  mostrarTela("telaCargas");
+  if ($("cartaoCaixa").classList.contains("oculto")) $("btnAbrirCaixa").click();
+  $("painelImpCaixa").classList.remove("oculto");
+  const dt = new DataTransfer(); arquivos.forEach(f => dt.items.add(f));
+  $("arqImpCaixa").files = dt.files;
+  $("arqImpCaixa").dispatchEvent(new Event("change"));
+  setTimeout(() => $("boxImpCaixa").scrollIntoView({ behavior: "smooth", block: "start" }), 300);
+}
 async function analisarImpCaixa() {
   const L = impCaixa.linhas, padrao = $("impDiaPadrao").value;
   L.forEach(l => l.diaF = l.dia || padrao || l.diaSug || hojeISO());
@@ -2800,6 +2819,15 @@ $("arqExtrato").onchange = async () => {
     const ext = (f.name.split(".").pop() || "").toLowerCase();
     const buf = await f.arrayBuffer();
     let texto = () => { const t = new TextDecoder("utf-8").decode(buf); return t.includes("�") ? new TextDecoder("windows-1252").decode(buf) : t; };
+    // planilha do caixa da secretária (tem coluna PLACA) não é extrato: vai para a importação do caixa
+    if (["xls", "xlsx", "csv"].includes(ext) && await ehPlanilhaCaixa(f)) {
+      $("arqExtrato").value = "";
+      msg("msgExtrato", `<b>${esc(f.name)}</b> é a planilha do caixa (tem placas), não o extrato do banco. Ela não foi gravada aqui.<br>
+        A conferência dela com o banco e a câmera é feita em <b>Caixa → Importar planilha do caixa</b>.
+        <button type="button" class="btn" id="btnLevarImpCaixa">Abrir a planilha na importação do caixa</button>`, "aviso");
+      $("btnLevarImpCaixa").onclick = () => levarParaImpCaixa([f]);
+      return;
+    }
     let todas;
     if (ext === "pdf") todas = await lerPDF(buf);
     else if (ext === "xls" || ext === "xlsx") todas = await lerExcel(buf);
