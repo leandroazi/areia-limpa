@@ -534,7 +534,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       <label>Tipo</label>
       <div class="radio">
         <label><input type="radio" name="tipoDesp" value="ord" checked> Ordinária</label>
-        <label><input type="radio" name="tipoDesp" value="ext"> Extraordinária</label>
+        <label id="lblExt"><input type="radio" name="tipoDesp" value="ext"> Extraordinária</label>
       </div>
       <label for="catDespesa">Categoria</label>
       <select id="catDespesa" required></select>
@@ -551,8 +551,10 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       </div>
       <label for="descDespesa">Descrição</label>
       <input id="descDespesa" type="text" maxlength="200" placeholder="Ex.: 500 L diesel · Posto X">
-      <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="recorrenteDespesa" style="width:auto;margin:0"> Despesa recorrente (repete todo mês, no dia 01)</label>
-      <div class="sub">Marque as fixas, como internet, salários e parcelas. As que mudam de valor, como energia, devem ser lançadas todo mês. Para parar de repetir, exclua a cópia mais recente.</div>
+      <div id="blocoRecorrente">
+        <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="recorrenteDespesa" style="width:auto;margin:0"> Despesa recorrente (repete todo mês, no dia 01)</label>
+        <div class="sub">Marque as fixas, como internet, salários e parcelas. As que mudam de valor, como energia, devem ser lançadas todo mês. Para parar de repetir, exclua a cópia mais recente.</div>
+      </div>
       <div class="sub" id="ajudaTipo" style="margin-top:8px"></div>
       <button class="btn" id="btnDespesa" type="submit">Lançar despesa</button>
       <div id="msgDespesa"></div>
@@ -807,6 +809,8 @@ const CATEGORIAS = {
   ext: [["maquinario","Maquinário novo"],["equipamentos","Equipamentos"],["obras","Obras e melhorias"],["outrosInvestimentos","Outros investimentos"]],
 };
 const NOME_CAT = Object.fromEntries([...CATEGORIAS.ord, ...CATEGORIAS.ext]);
+// A secretária só lança estas; o resto (funcionários, internet, energia, extraordinárias e recorrentes) é do gestor
+const CAT_SECRETARIA = ["diesel", "manutencao", "gerais"];
 
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -1798,8 +1802,13 @@ $("formCredito").onsubmit = async (ev) => {
 // ---------------- DESPESAS ----------------
 $$("input[name=tipoDesp]").forEach(r => r.onchange = preencherCategorias);
 function preencherCategorias() {
+  const gestor = perfil?.papel === "gestor";
+  $("lblExt").classList.toggle("oculto", !gestor);
+  $("blocoRecorrente").classList.toggle("oculto", !gestor);
+  if (!gestor) { $("recorrenteDespesa").checked = false; document.querySelector('input[name=tipoDesp][value=ord]').checked = true; }
   const t = $("formDespesa").tipoDesp.value;
-  $("catDespesa").innerHTML = CATEGORIAS[t].map(([k, n]) => `<option value="${k}">${n}</option>`).join("");
+  const cats = CATEGORIAS[t].filter(([k]) => gestor || CAT_SECRETARIA.includes(k));
+  $("catDespesa").innerHTML = cats.map(([k, n]) => `<option value="${k}">${n}</option>`).join("");
   atualizarCombustivel();
   $("ajudaTipo").textContent = t === "ord"
     ? "Ordinária: custo do dia a dia. Entra no resultado operacional e no resultado final."
@@ -1837,7 +1846,8 @@ $("formDespesa").onsubmit = async (ev) => {
     const litros = Number($("litrosDespesa").value), preco = Number($("precoLitroDespesa").value);
     if (cat === "diesel" && litros > 0) { reg.litros = litros; reg.preco_litro = preco > 0 ? preco : Math.round(valor / litros * 10000) / 10000; }
     else if (cat === "diesel" && preco > 0) reg.preco_litro = preco;
-    if ($("recorrenteDespesa").checked) reg.recorrente = true;
+    if (perfil?.papel !== "gestor" && !CAT_SECRETARIA.includes(cat)) throw new Error("Esta despesa só pode ser lançada pelo gestor.");
+    if (perfil?.papel === "gestor" && $("recorrenteDespesa").checked) reg.recorrente = true;
     const { error } = await db.from("despesas").insert(reg);
     if (error) throw error;
     msg("msgDespesa", `Despesa de ${moeda(valor)} (${NOME_CAT[cat]}) lançada.`, "ok");
