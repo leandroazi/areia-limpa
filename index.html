@@ -640,6 +640,10 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
     </div>
     <div class="cartao grafico oculto" id="cartaoCombustivel">
       <div class="topo"><h2 id="tituloCombustivel">Combustível</h2><span class="sub" id="subCombustivel"></span></div>
+      <div class="seg" id="segMetricaComb">
+        <button type="button" data-m="valor" class="ativa">Valor (R$)</button>
+        <button type="button" data-m="litros">Litros</button>
+      </div>
       <div class="seg" id="segPeriodoComb">
         <button type="button" data-per="dia" class="ativa">Dia</button>
         <button type="button" data-per="semana">Semana</button>
@@ -2618,7 +2622,7 @@ async function carregarDash() {
   } catch (e) { $("dashAtualizado").textContent = "não foi possível carregar o painel"; }
 }
 // ---- Combustível (só gestor): litros ou R$ por dia / semana / mês; toque no gráfico alterna ----
-let combustivel = { lista: null, per: "dia", metrica: "litros" };
+let combustivel = { lista: null, per: "dia", metrica: "valor" };
 async function carregarCombustivel() {
   const ver = perfil?.papel === "gestor";
   $("cartaoCombustivel").classList.toggle("oculto", !ver);
@@ -2653,13 +2657,16 @@ function desenharCombustivel() {
   const emLitros = metrica === "litros";
   const fmt = emLitros ? (x) => Math.round(x).toLocaleString("pt-BR") + " L" : (x) => x >= 1000 ? (x / 1000).toFixed(1).replace(".", ",") + " mil" : String(Math.round(x));
   $("tituloCombustivel").textContent = emLitros ? "Combustível · litros" : "Combustível · valor (R$)";
-  $("subCombustivel").textContent = totL > 0 ? `preço médio ${moeda(totVcomL / totL)}/L` : "sem litros informados";
+  const totalPer = pontos.reduce((t, p) => t + (emLitros ? p.l : p.v), 0);
+  $("subCombustivel").textContent = `total ${emLitros ? Math.round(totalPer).toLocaleString("pt-BR") + " L" : moeda(totalPer)}` + (totL > 0 ? ` · preço médio ${moeda(totVcomL / totL)}/L` : " · sem litros informados");
   $("dashCombustivel").innerHTML = graficoBarras(pontos.map(p => ({ d: p.d, r: p.r, t: p.t, v: emLitros ? p.l : p.v })), fmt);
   $("notaCombustivel").textContent = "Toque no gráfico para alternar entre litros e valor (R$)." + (semLitros ? ` ${semLitros} abastecimento(s) sem litros informados não entram no gráfico de litros.` : "");
   $$("#segPeriodoComb button").forEach(b => b.classList.toggle("ativa", b.dataset.per === per));
+  $$("#segMetricaComb button").forEach(b => b.classList.toggle("ativa", b.dataset.m === metrica));
 }
 $("dashCombustivel").onclick = () => { combustivel.metrica = combustivel.metrica === "litros" ? "valor" : "litros"; desenharCombustivel(); };
 $$("#segPeriodoComb button").forEach(b => b.onclick = () => { combustivel.per = b.dataset.per; desenharCombustivel(); });
+$$("#segMetricaComb button").forEach(b => b.onclick = () => { combustivel.metrica = b.dataset.m; desenharCombustivel(); });
 function graficoBarras(pontos, rotulo) {
   const W = 640, H = 200, base = 170, topo = 22, n = pontos.length, larg = W / n;
   const max = Math.max(1, ...pontos.map(p => p.v));
