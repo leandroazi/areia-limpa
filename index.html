@@ -542,6 +542,13 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
         <div><label for="valorDespesa">Valor (R$)</label><input id="valorDespesa" type="number" min="0.01" step="0.01" required></div>
         <div><label for="dataDespesa">Data</label><input id="dataDespesa" type="date" required></div>
       </div>
+      <div id="blocoCombustivel" class="oculto">
+        <div class="linha2">
+          <div><label for="litrosDespesa">Litros <span class="sub">(opcional)</span></label><input id="litrosDespesa" type="number" min="0.01" step="0.01" inputmode="decimal"></div>
+          <div><label for="precoLitroDespesa">Preço do litro (R$) <span class="sub">(opcional)</span></label><input id="precoLitroDespesa" type="number" min="0.01" step="0.0001" inputmode="decimal"></div>
+        </div>
+        <div class="sub" id="ajudaCombustivel">Informe litros e preço para comparar os abastecimentos no painel. Se preencher os dois, o valor é calculado.</div>
+      </div>
       <label for="descDespesa">Descrição</label>
       <input id="descDespesa" type="text" maxlength="200" placeholder="Ex.: 500 L diesel · Posto X">
       <div class="sub" id="ajudaTipo" style="margin-top:8px"></div>
@@ -630,6 +637,16 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
     <div class="cartao grafico">
       <div class="topo"><h2>Caixa por dia</h2><span class="sub">vendas</span></div>
       <div id="dashCaixa"></div>
+    </div>
+    <div class="cartao grafico oculto" id="cartaoCombustivel">
+      <div class="topo"><h2 id="tituloCombustivel">Combustível</h2><span class="sub" id="subCombustivel"></span></div>
+      <div class="seg" id="segPeriodoComb">
+        <button type="button" data-per="dia" class="ativa">Dia</button>
+        <button type="button" data-per="semana">Semana</button>
+        <button type="button" data-per="mes">Mês</button>
+      </div>
+      <div id="dashCombustivel" style="cursor:pointer" title="Toque para alternar entre litros e valor"></div>
+      <div class="sub" id="notaCombustivel" style="margin-top:6px">Toque no gráfico para alternar entre litros e valor (R$).</div>
     </div>
     <div class="cartao barras">
       <div class="topo"><h2>Formas de pagamento</h2><span class="sub">últimos 30 dias</span></div>
@@ -1777,16 +1794,29 @@ $$("input[name=tipoDesp]").forEach(r => r.onchange = preencherCategorias);
 function preencherCategorias() {
   const t = $("formDespesa").tipoDesp.value;
   $("catDespesa").innerHTML = CATEGORIAS[t].map(([k, n]) => `<option value="${k}">${n}</option>`).join("");
+  atualizarCombustivel();
   $("ajudaTipo").textContent = t === "ord"
     ? "Ordinária: custo do dia a dia. Entra no resultado operacional e no resultado final."
     : "Extraordinária (caixa de investimentos): compra de máquina, obra etc. Entra só no resultado final.";
 }
+function atualizarCombustivel() { $("blocoCombustivel").classList.toggle("oculto", $("catDespesa").value !== "diesel"); }
+$("catDespesa").onchange = atualizarCombustivel;
+// litros × preço calcula o valor
+function calcularCombustivel(origem) {
+  const l = Number($("litrosDespesa").value), p = Number($("precoLitroDespesa").value);
+  if (l > 0 && p > 0 && origem !== "valor") $("valorDespesa").value = (Math.round(l * p * 100) / 100).toFixed(2);
+}
+$("litrosDespesa").oninput = () => calcularCombustivel("litros");
+$("precoLitroDespesa").oninput = () => calcularCombustivel("preco");
+$("valorDespesa").oninput = () => calcularCombustivel("valor");
+const detalheCombustivel = (d) => d.litros ? ` · ${Number(d.litros).toLocaleString("pt-BR")} L${d.preco_litro ? " a " + moeda(d.preco_litro) + "/L" : ""}` : "";
 async function carregarDespesas() {
-  const { data } = await db.from("despesas").select("id,data,categoria,descricao,valor").order("data", { ascending: false }).limit(60);
+  let { data, error } = await db.from("despesas").select("id,data,categoria,descricao,valor,litros,preco_litro").order("data", { ascending: false }).limit(60);
+  if (error) ({ data } = await db.from("despesas").select("id,data,categoria,descricao,valor").order("data", { ascending: false }).limit(60));
   const lista = data || [];
   despesasPorId = Object.fromEntries(lista.map(d => [d.id, d]));
   $("vazioDespesas").classList.toggle("oculto", lista.length > 0);
-  $("tabelaDespesas").innerHTML = lista.map(d => `<tr><td>${dataBR(d.data)}</td><td>${esc(NOME_CAT[d.categoria] || d.categoria)}</td><td>${esc(d.descricao || "—")}${pode("alterar_despesas") ? ` <button type="button" class="acaoLinha" data-alterar-despesa="${d.id}">Excluir</button>` : ""}</td><td class="num">${moeda(d.valor)}</td></tr>`).join("");
+  $("tabelaDespesas").innerHTML = lista.map(d => `<tr><td>${dataBR(d.data)}</td><td>${esc(NOME_CAT[d.categoria] || d.categoria)}</td><td>${esc(d.descricao || "—")}${esc(detalheCombustivel(d))}${pode("alterar_despesas") ? ` <button type="button" class="acaoLinha" data-alterar-despesa="${d.id}">Excluir</button>` : ""}</td><td class="num">${moeda(d.valor)}</td></tr>`).join("");
   ligarAcoes($("tabelaDespesas"));
 }
 $("formDespesa").onsubmit = async (ev) => {
@@ -1796,10 +1826,14 @@ $("formDespesa").onsubmit = async (ev) => {
   const cat = $("catDespesa").value;
   $("btnDespesa").disabled = true;
   try {
-    const { error } = await db.from("despesas").insert({ data: $("dataDespesa").value, valor, categoria: cat, descricao: $("descDespesa").value.trim() });
+    const reg = { data: $("dataDespesa").value, valor, categoria: cat, descricao: $("descDespesa").value.trim() };
+    const litros = Number($("litrosDespesa").value), preco = Number($("precoLitroDespesa").value);
+    if (cat === "diesel" && litros > 0) { reg.litros = litros; reg.preco_litro = preco > 0 ? preco : Math.round(valor / litros * 10000) / 10000; }
+    else if (cat === "diesel" && preco > 0) reg.preco_litro = preco;
+    const { error } = await db.from("despesas").insert(reg);
     if (error) throw error;
     msg("msgDespesa", `Despesa de ${moeda(valor)} (${NOME_CAT[cat]}) lançada.`, "ok");
-    $("valorDespesa").value = ""; $("descDespesa").value = "";
+    $("valorDespesa").value = ""; $("descDespesa").value = ""; $("litrosDespesa").value = ""; $("precoLitroDespesa").value = "";
     await carregarDespesas();
   } catch (e) { msg("msgDespesa", traduzir(e)); }
   finally { $("btnDespesa").disabled = false; }
@@ -2580,18 +2614,62 @@ async function carregarDash() {
     const top = Object.entries(clientes).sort((a, b) => b[1] - a[1]).slice(0, 6), maxC = top[0]?.[1] || 1;
     $("dashClientes").innerHTML = top.map(([n, c]) => `<div class="l"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n)}</span><span class="t"><i style="width:${(c / maxC * 100).toFixed(1)}%"></i></span><span class="n">${c} cargas</span></div>`).join("") || '<div class="vazio">Sem cargas no período.</div>';
     $("dashAtualizado").textContent = "atualizado às " + hora(new Date());
+    carregarCombustivel();
   } catch (e) { $("dashAtualizado").textContent = "não foi possível carregar o painel"; }
 }
+// ---- Combustível (só gestor): litros ou R$ por dia / semana / mês; toque no gráfico alterna ----
+let combustivel = { lista: null, per: "dia", metrica: "litros" };
+async function carregarCombustivel() {
+  const ver = perfil?.papel === "gestor";
+  $("cartaoCombustivel").classList.toggle("oculto", !ver);
+  if (!ver) return;
+  const ini = new Date(); ini.setMonth(ini.getMonth() - 6);
+  const { data, error } = await db.from("despesas").select("data,valor,litros").eq("categoria", "diesel").gte("data", diaLocal(ini)).order("data");
+  if (error) { $("dashCombustivel").innerHTML = '<div class="vazio">Não foi possível carregar o combustível.</div>'; return; }
+  combustivel.lista = data; desenharCombustivel();
+}
+function desenharCombustivel() {
+  const { lista, per, metrica } = combustivel; if (!lista) return;
+  const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+  const mesAbr = (d) => d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+  const pontos = []; const idx = {};
+  const novo = (chave, d, r, t) => { idx[chave] = pontos.length; pontos.push({ d: diaLocal(d), r, t, l: 0, v: 0 }); };
+  const chaveDe = (iso) => {
+    const d = new Date(iso + "T12:00");
+    if (per === "dia") return iso;
+    if (per === "mes") return iso.slice(0, 7);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return diaLocal(d);
+  };
+  if (per === "dia") for (let i = 13; i >= 0; i--) { const d = new Date(hoje); d.setDate(d.getDate() - i); novo(diaLocal(d), d, null, null); }
+  if (per === "semana") for (let i = 11; i >= 0; i--) { const d = new Date(hoje); d.setDate(d.getDate() - i * 7); const k = chaveDe(diaLocal(d)); const s = new Date(k + "T12:00"); novo(k, s, String(s.getDate()).padStart(2, "0") + "/" + String(s.getMonth() + 1).padStart(2, "0"), "Semana de " + dataBR(k)); }
+  if (per === "mes") for (let i = 5; i >= 0; i--) { const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 15, 12); novo(diaLocal(d).slice(0, 7), d, mesAbr(d), mesAbr(d) + "/" + d.getFullYear()); }
+  let semLitros = 0, totL = 0, totVcomL = 0;
+  for (const r of lista) {
+    const p = pontos[idx[chaveDe(r.data)]]; if (!p) continue;
+    const v = Number(r.valor), l = Number(r.litros || 0);
+    p.v += v; p.l += l;
+    if (l > 0) { totL += l; totVcomL += v; } else semLitros++;
+  }
+  const emLitros = metrica === "litros";
+  const fmt = emLitros ? (x) => Math.round(x).toLocaleString("pt-BR") + " L" : (x) => x >= 1000 ? (x / 1000).toFixed(1).replace(".", ",") + " mil" : String(Math.round(x));
+  $("tituloCombustivel").textContent = emLitros ? "Combustível · litros" : "Combustível · valor (R$)";
+  $("subCombustivel").textContent = totL > 0 ? `preço médio ${moeda(totVcomL / totL)}/L` : "sem litros informados";
+  $("dashCombustivel").innerHTML = graficoBarras(pontos.map(p => ({ d: p.d, r: p.r, t: p.t, v: emLitros ? p.l : p.v })), fmt);
+  $("notaCombustivel").textContent = "Toque no gráfico para alternar entre litros e valor (R$)." + (semLitros ? ` ${semLitros} abastecimento(s) sem litros informados não entram no gráfico de litros.` : "");
+  $$("#segPeriodoComb button").forEach(b => b.classList.toggle("ativa", b.dataset.per === per));
+}
+$("dashCombustivel").onclick = () => { combustivel.metrica = combustivel.metrica === "litros" ? "valor" : "litros"; desenharCombustivel(); };
+$$("#segPeriodoComb button").forEach(b => b.onclick = () => { combustivel.per = b.dataset.per; desenharCombustivel(); });
 function graficoBarras(pontos, rotulo) {
   const W = 640, H = 200, base = 170, topo = 22, n = pontos.length, larg = W / n;
   const max = Math.max(1, ...pontos.map(p => p.v));
   const barras = pontos.map((p, i) => {
     const h = (p.v / max) * (base - topo), x = i * larg + larg * 0.18, w = larg * 0.64;
-    const dt = new Date(p.d + "T12:00"), dom = dt.getDay() === 0, hoje = i === n - 1;
+    const dt = new Date(p.d + "T12:00"), dom = !p.r && dt.getDay() === 0, hoje = i === n - 1;
     const cor = hoje ? "var(--areia)" : dom ? "var(--borda)" : "var(--carvao)";
-    return `<rect x="${x.toFixed(1)}" y="${(base - h).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(h, p.v ? 2 : 0).toFixed(1)}" rx="4" fill="${cor}"><title>${p.d.split("-").reverse().join("/")}: ${rotulo(p.v)}</title></rect>`
+    return `<rect x="${x.toFixed(1)}" y="${(base - h).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(h, p.v ? 2 : 0).toFixed(1)}" rx="4" fill="${cor}"><title>${p.t || p.d.split("-").reverse().join("/")}: ${rotulo(p.v)}</title></rect>`
       + (p.v ? `<text class="val" x="${(x + w / 2).toFixed(1)}" y="${(base - h - 5).toFixed(1)}" text-anchor="middle">${rotulo(p.v)}</text>` : "")
-      + `<text x="${(x + w / 2).toFixed(1)}" y="${base + 16}" text-anchor="middle">${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}</text>`;
+      + `<text x="${(x + w / 2).toFixed(1)}" y="${base + 16}" text-anchor="middle">${p.r || String(dt.getDate()).padStart(2, "0") + "/" + String(dt.getMonth() + 1).padStart(2, "0")}</text>`;
   }).join("");
   return `<svg viewBox="0 0 ${W} ${H}" role="img"><line x1="0" x2="${W}" y1="${base}" y2="${base}" stroke="var(--borda)"/>${barras}</svg>`;
 }
