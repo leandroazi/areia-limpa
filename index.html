@@ -551,6 +551,8 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       </div>
       <label for="descDespesa">Descrição</label>
       <input id="descDespesa" type="text" maxlength="200" placeholder="Ex.: 500 L diesel · Posto X">
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="recorrenteDespesa" style="width:auto;margin:0"> Despesa recorrente (repete todo mês, no dia 01)</label>
+      <div class="sub">Marque as fixas, como internet, salários e parcelas. As que mudam de valor, como energia, devem ser lançadas todo mês. Para parar de repetir, exclua a cópia mais recente.</div>
       <div class="sub" id="ajudaTipo" style="margin-top:8px"></div>
       <button class="btn" id="btnDespesa" type="submit">Lançar despesa</button>
       <div id="msgDespesa"></div>
@@ -1815,12 +1817,13 @@ $("precoLitroDespesa").oninput = () => calcularCombustivel("preco");
 $("valorDespesa").oninput = () => calcularCombustivel("valor");
 const detalheCombustivel = (d) => d.litros ? ` · ${Number(d.litros).toLocaleString("pt-BR")} L${d.preco_litro ? " a " + moeda(d.preco_litro) + "/L" : ""}` : "";
 async function carregarDespesas() {
-  let { data, error } = await db.from("despesas").select("id,data,categoria,descricao,valor,litros,preco_litro").order("data", { ascending: false }).limit(60);
+  await db.rpc("gerar_despesas_recorrentes"); // dia 01: copia as recorrentes do mês anterior (não duplica)
+  let { data, error } = await db.from("despesas").select("id,data,categoria,descricao,valor,litros,preco_litro,recorrente").order("data", { ascending: false }).limit(60);
   if (error) ({ data } = await db.from("despesas").select("id,data,categoria,descricao,valor").order("data", { ascending: false }).limit(60));
   const lista = data || [];
   despesasPorId = Object.fromEntries(lista.map(d => [d.id, d]));
   $("vazioDespesas").classList.toggle("oculto", lista.length > 0);
-  $("tabelaDespesas").innerHTML = lista.map(d => `<tr><td>${dataBR(d.data)}</td><td>${esc(NOME_CAT[d.categoria] || d.categoria)}</td><td>${esc(d.descricao || "—")}${esc(detalheCombustivel(d))}${pode("alterar_despesas") ? ` <button type="button" class="acaoLinha" data-alterar-despesa="${d.id}">Excluir</button>` : ""}</td><td class="num">${moeda(d.valor)}</td></tr>`).join("");
+  $("tabelaDespesas").innerHTML = lista.map(d => `<tr><td>${dataBR(d.data)}</td><td>${esc(NOME_CAT[d.categoria] || d.categoria)}</td><td>${esc(d.descricao || "—")}${esc(detalheCombustivel(d))}${d.recorrente ? ' <span class="tag">recorrente</span>' : ""}${pode("alterar_despesas") ? ` <button type="button" class="acaoLinha" data-alterar-despesa="${d.id}">Excluir</button>` : ""}</td><td class="num">${moeda(d.valor)}</td></tr>`).join("");
   ligarAcoes($("tabelaDespesas"));
 }
 $("formDespesa").onsubmit = async (ev) => {
@@ -1834,6 +1837,7 @@ $("formDespesa").onsubmit = async (ev) => {
     const litros = Number($("litrosDespesa").value), preco = Number($("precoLitroDespesa").value);
     if (cat === "diesel" && litros > 0) { reg.litros = litros; reg.preco_litro = preco > 0 ? preco : Math.round(valor / litros * 10000) / 10000; }
     else if (cat === "diesel" && preco > 0) reg.preco_litro = preco;
+    if ($("recorrenteDespesa").checked) reg.recorrente = true;
     const { error } = await db.from("despesas").insert(reg);
     if (error) throw error;
     msg("msgDespesa", `Despesa de ${moeda(valor)} (${NOME_CAT[cat]}) lançada.`, "ok");
