@@ -402,6 +402,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
         <button class="btn sec" style="width:auto;margin:0;padding:8px 12px" id="btnAtualizarCam" type="button">Atualizar</button>
       </div>
       <div id="camStatus" class="camstatus"><span class="ponto"></span><div>Carregando…</div></div>
+      <div id="camPerdas"></div>
       <h2 style="margin-top:14px">Últimas fotos</h2>
       <div id="camFotos" class="camfotos"></div>
     </div>
@@ -2499,6 +2500,15 @@ async function carregarStatusCamera() {
                s.ultima_leitura ? `Última leitura: ${diaHoraBR(s.ultima_leitura)}` : "Nenhuma leitura ao vivo ainda",
                `Leituras hoje: ${data.leituras_hoje}`].filter(Boolean).join(" · ");
   $("camStatus").innerHTML = `<span class="ponto ${cls}"></span><div><b>${txt}</b><small>${det}</small></div>`;
+  // a câmera numera cada envio: buraco na numeração = leitura que ela gerou e não chegou ao servidor
+  db.rpc("perdas_camera", { dias: 7 }).then(({ data: p }) => {
+    const el = $("camPerdas"); if (!el) return;
+    const tot = (p || []).reduce((t, x) => t + x.quantidade, 0);
+    el.innerHTML = !p ? "" : tot
+      ? `<div class="msg aviso"><b>${tot} leitura(s) da câmera não chegaram</b> nos últimos 7 dias: ${p.map(x => `nº ${x.de_num}${x.ate_num > x.de_num ? "–" + x.ate_num : ""} entre ${diaHoraBR(x.depois_de)} e ${diaHoraBR(x.antes_de)}`).join("; ")}.
+         Para recuperar, exporte as placas desse período no programa da câmera e envie em "Importar leituras".</div>`
+      : `<div class="sub" style="margin-top:6px">✓ Nenhuma leitura perdida nos últimos 7 dias (numeração da câmera em sequência).</div>`;
+  });
   const fotos = data.fotos || [];
   await urlsFotos(fotos.map(f => f.foto_path));
   $("camFotos").innerHTML = fotos.length ? fotos.map((f, i) => `<button type="button" data-i="${i}">
