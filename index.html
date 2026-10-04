@@ -489,7 +489,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
       <input id="buscaVeiculo" type="search" placeholder="Buscar placa, motorista ou cliente">
       <div class="seg" style="margin-top:10px">
         <button data-filtro="cacamba" class="ativa" type="button">Caçambas</button>
-        <button data-filtro="ignorado" type="button">Outros</button>
+        <button data-filtro="ignorado" type="button">Uso frequente</button>
         <button data-filtro="bloqueado" type="button">Bloqueados</button>
       </div>
       <div id="listaVeiculos"></div>
@@ -777,9 +777,20 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
     <label>Tipo</label>
     <div class="radio">
       <label><input type="radio" name="vTipo" value="cacamba" checked> Caçamba</label>
-      <label><input type="radio" name="vTipo" value="ignorado"> Outro veículo</label>
+      <label><input type="radio" name="vTipo" value="ignorado"> Uso frequente (não conta)</label>
     </div>
-    <div class="sub" style="margin-top:6px">Caçambas contam como venda. "Outro veículo" (funcionário, empresa, fornecedor) é ignorado pela câmera.</div>
+    <div class="sub" style="margin-top:6px">Caçamba: a passagem na câmera é conferida com as vendas. Uso frequente (proprietário, funcionário, prestador...): a câmera registra, mas não entra na contagem nem na conferência.</div>
+    <div id="boxCategoria" class="oculto">
+      <label for="vCategoria">Marcação</label>
+      <select id="vCategoria">
+        <option value="proprietario">Proprietário</option>
+        <option value="funcionario">Funcionário</option>
+        <option value="prestador">Prestador de serviço</option>
+        <option value="fornecedor">Fornecedor</option>
+        <option value="visitante">Visitante frequente</option>
+        <option value="outro">Outro</option>
+      </select>
+    </div>
     <div id="boxPorte">
       <label>Porte da caçamba</label>
       <div class="radio">
@@ -978,7 +989,7 @@ function aplicarPermissoes() {
 // ---------------- Dados base ----------------
 async function carregarBase() {
   const [v, p, a, s] = await Promise.all([
-    db.from("veiculos").select("id,placa,tipo,modelo,cor,motorista,telefone,cliente,observacao,situacao,motivo_bloqueio,porte,preco_limpa,preco_suja").order("placa"),
+    db.from("veiculos").select("id,placa,tipo,categoria,modelo,cor,motorista,telefone,cliente,observacao,situacao,motivo_bloqueio,porte,preco_limpa,preco_suja").order("placa"),
     db.from("precos_carga").select("vigente_desde,valor").order("vigente_desde"),
     db.rpc("resumo_acessos"),
     db.rpc("saldo_creditos"),
@@ -1290,7 +1301,14 @@ function preencherTabelaPrecos() {
   for (const [id, k] of Object.entries(ids)) $(id).value = tabelaPrecos[k] ?? "";
   aplicarPrecoSugerido(false);
 }
-$$("input[name=vTipo]").forEach(r => r.addEventListener("change", () => $("boxPorte").classList.toggle("oculto", $("formVeiculo").vTipo.value !== "cacamba")));
+const NOME_CATEGORIA = { proprietario: "Proprietário", funcionario: "Funcionário", prestador: "Prestador de serviço", fornecedor: "Fornecedor", visitante: "Visitante frequente", outro: "Uso frequente" };
+const rotuloFrequente = (v) => `${NOME_CATEGORIA[v?.categoria] || "Uso frequente"} · não conta`;
+function ajustarTipoVeiculo() {
+  const t = $("formVeiculo").vTipo.value;
+  $("boxPorte").classList.toggle("oculto", t !== "cacamba");
+  $("boxCategoria").classList.toggle("oculto", t !== "ignorado");
+}
+$$("input[name=vTipo]").forEach(r => r.addEventListener("change", ajustarTipoVeiculo));
 $("btnSalvarPrecos").onclick = async () => {
   const ids = { pTruckLimpa: ["truck", "areia_limpa"], pTruckSuja: ["truck", "areia_suja"], pTocoLimpa: ["toco", "areia_limpa"], pTocoSuja: ["toco", "areia_suja"] };
   $("btnSalvarPrecos").disabled = true;
@@ -1335,7 +1353,7 @@ function atualizarPlaca() {
   $$("#sugestoes button").forEach(b => b.onclick = () => escolherPlaca(b.dataset.placa));
   let html = "";
   if (v?.situacao === "bloqueado") html = `<div class="info bloq">⛔ VEÍCULO PROIBIDO${v.motivo_bloqueio ? " · " + esc(v.motivo_bloqueio) : ""}. Não é possível lançar carga.</div>`;
-  else if (v?.tipo === "ignorado") html = `<div class="info alerta">⚠ Esta placa está cadastrada como "outro veículo" (não caçamba).</div>`;
+  else if (v?.tipo === "ignorado") html = `<div class="info alerta">⚠ Esta placa é de uso frequente (${esc(rotuloFrequente(v))}), não é caçamba.</div>`;
   else if (v) html = `<div class="info ok">✔ <b>${esc(nomeCliente(v))}</b>${v.cliente && v.motorista ? " · " + esc(v.motorista) : ""}${v.modelo ? " · " + esc(v.modelo) : ""}${v.cor ? ` · <b>cor ${esc(v.cor)}</b>` : ""}${v.porte ? " · " + (v.porte === "toco" ? "Toco" : "Truck") : ""}<br><span style="font-weight:400">Confira se a cor do veículo confere.</span></div>`;
   else if (p.length >= 7 && placaValida(p)) {
     const par = placasParecidas(p);
@@ -1864,7 +1882,7 @@ function renderVeiculos() {
     return `<div class="veic" data-id="${v.id}">
       <div><span class="pl">${esc(v.placa)}</span>
         ${v.situacao === "bloqueado" ? '<span class="tag bloq">Proibido</span>' : '<span class="tag ok">Permitido</span>'}
-        ${v.tipo === "ignorado" ? '<span class="tag cin">Outro</span>' : ""}
+        ${v.tipo === "ignorado" ? `<span class="tag cin">${esc(rotuloFrequente(v))}</span>` : ""}
         ${s > 0.009 ? `<span class="tag ouro">Carteira: ${moeda(s)}</span>` : ""}
         ${v.tipo === "cacamba" && faltandoVeic(v).length ? `<span class="tag aviso">Falta ${faltandoVeic(v).length} dado${faltandoVeic(v).length > 1 ? "s" : ""}</span>` : ""}
         <div class="d">${esc([v.motorista, v.modelo, v.cor].filter(Boolean).join(" · ") || "—")}</div>
@@ -2052,14 +2070,15 @@ $("btnSalvarLote").onclick = async () => {
 };
 $("btnNovoVeiculo").onclick = () => abrirVeiculo(null);
 $$("input[name=vSituacao]").forEach(r => r.onchange = () => $("boxMotivo").classList.toggle("oculto", !$("formVeiculo").vSituacao.value.startsWith("b")));
-function abrirVeiculo(v) {
+function abrirVeiculo(v, tipoInicial) {
   veiculoEditando = v;
   const f = $("formVeiculo");
   $("tituloVeiculo").textContent = v ? "Ficha do veículo" : "Cadastrar veículo";
   $("vPlaca").value = v?.placa || normalizar($("buscaVeiculo").value).slice(0, 7);
   $("vPlaca").readOnly = !!v;
-  f.vTipo.value = v?.tipo || "cacamba";
-  $("boxPorte").classList.toggle("oculto", f.vTipo.value !== "cacamba");
+  f.vTipo.value = v?.tipo || tipoInicial || "cacamba";
+  $("vCategoria").value = v?.categoria || "funcionario";
+  ajustarTipoVeiculo();
   $("vModelo").value = v?.modelo || ""; $("vCor").value = v?.cor || "";
   $("vMotorista").value = v?.motorista || ""; $("vTelefone").value = v?.telefone || "";
   $("vCliente").value = v?.cliente || ""; $("vObs").value = v?.observacao || "";
@@ -2076,7 +2095,7 @@ function abrirVeiculo(v) {
   } else $("fichaResumo").innerHTML = "";
   msg("msgVeiculo", "");
   const soLeitura = !!v && !pode("alterar_veiculos");
-  $$("#formVeiculo input").forEach(i => { if (i.id !== "vPlaca") i.disabled = soLeitura; });
+  $$("#formVeiculo input, #formVeiculo select").forEach(i => { if (i.id !== "vPlaca") i.disabled = soLeitura; });
   $("btnSalvarVeiculo").classList.toggle("oculto", soLeitura);
   if (soLeitura) msg("msgVeiculo", "Você não tem permissão para alterar um veículo já cadastrado.", "aviso");
   $("dlgVeiculo").showModal();
@@ -2089,7 +2108,7 @@ $("formVeiculo").onsubmit = async (ev) => {
   if (!placaValida(placa)) return msg("msgVeiculo", "Placa inválida. Use o formato ABC1D23 ou ABC1234.");
   const situacao = f.vSituacao.value;
   if (situacao === "bloqueado" && !$("vMotivo").value.trim()) return msg("msgVeiculo", "Informe o motivo do bloqueio.");
-  const dados = { placa, tipo: f.vTipo.value, modelo: $("vModelo").value.trim(), cor: $("vCor").value.trim(),
+  const dados = { placa, tipo: f.vTipo.value, categoria: f.vTipo.value === "ignorado" ? $("vCategoria").value : null, modelo: $("vModelo").value.trim(), cor: $("vCor").value.trim(),
     motorista: $("vMotorista").value.trim(), telefone: $("vTelefone").value.trim(), cliente: $("vCliente").value.trim(),
     observacao: $("vObs").value.trim(), situacao, motivo_bloqueio: situacao === "bloqueado" ? $("vMotivo").value.trim() : "",
     porte: f.vTipo.value === "cacamba" ? (document.querySelector("input[name=vPorte]:checked")?.value || null) : null,
@@ -2103,6 +2122,7 @@ $("formVeiculo").onsubmit = async (ev) => {
     if (r.error) throw r.error;
     $("dlgVeiculo").close();
     await carregarBase();
+    if (!$("telaCamera").classList.contains("oculto") && $("lprConf").innerHTML) conferirLpr();
   } catch (e) { msg("msgVeiculo", traduzir(e)); }
   finally { $("btnSalvarVeiculo").disabled = false; }
 };
@@ -2626,13 +2646,13 @@ async function analisarCamera(de, ate) {
   const pass = passagens(dl.leituras, dl.correcoes || []);
   const tipo = Object.fromEntries(veiculos.map(v => [v.placa, v]));
   const dias = {};
-  const dia = (d) => (dias[d] ||= { pass: {}, vendas: {}, semPlaca: 0, nCac: 0, nVendas: 0, itens: [] });
+  const dia = (d) => (dias[d] ||= { pass: {}, vendas: {}, semPlaca: 0, nCac: 0, nVendas: 0, itens: [], freq: {} });
   const semCadastro = {};
   for (const p of pass) {
     const d = dia(diaBahia(p.ini));
     if (!p.placa || !placaValida(p.placa)) { d.semPlaca++; continue; }   // sem placa ou leitura incompleta
     const v = tipo[p.placa];
-    if (v?.tipo === "ignorado") continue;
+    if (v?.tipo === "ignorado") { d.freq[p.placa] = (d.freq[p.placa] || 0) + 1; continue; }   // uso frequente: não conta
     if (!v) { const s = (semCadastro[p.placa] ||= { n: 0, ultimo: 0 }); s.n++; s.ultimo = Math.max(s.ultimo, p.ini); continue; }
     (d.pass[p.placa] ||= []).push(p.ini); d.nCac++;
   }
@@ -2688,6 +2708,7 @@ async function conferirLpr() {
       html += `<div class="conf-dia"><h3><span>${new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
         <span class="sub">${x.nCac} passagens de caçambas · ${x.nVendas} vendas${x.semPlaca ? ` · ${x.semPlaca} sem placa legível` : ""}</span></h3>
         ${itens.join("") || '<div class="conf-ok">✓ Câmera e vendas batem</div>'}
+        ${Object.keys(x.freq).length ? `<div class="sub" style="margin-top:4px">Uso frequente (não conta): ${Object.entries(x.freq).map(([pl, n]) => `<span class="pl">${esc(pl)}</span> ${esc(NOME_CATEGORIA[veiculoDe(pl)?.categoria] || "")}${n > 1 ? ` ×${n}` : ""}`).join(" · ")}</div>` : ""}
         ${gestor && pendDia > 1 ? `<button class="link" type="button" data-confirmar-dia="${d}">Confirmar as ${pendDia} vendas sem câmera deste dia</button>` : ""}</div>`;
     }
     const sc = Object.entries(A.semCadastro).sort((a, b) => b[1].n - a[1].n);
@@ -2700,11 +2721,12 @@ async function conferirLpr() {
       <div><span>Leituras no período</span><b>${A.leituras}</b></div></div>
       <div class="sub" style="margin-top:6px">O faturamento conta só as vendas lançadas. O que a câmera aponta de diferente fica aqui até o gestor analisar: <b>confirmar a venda</b> (a câmera não leu), <b>alterar/cancelar</b> a venda, <b>lançar</b> a venda que faltou ou marcar que <b>não carregou</b>. Tudo fica registrado com a justificativa.</div>`;
     const listaSC = sc.length ? `<h2 style="margin-top:16px">Placas lidas sem cadastro</h2>
-      <div class="sub">Cadastre as caçambas (ou marque como "Outros" os carros que não compram areia) para a conferência ficar completa.</div>
+      <div class="sub">Placa que a câmera leu e não está cadastrada fica aqui para conferência. Cadastre como <b>caçamba</b> (passa a ser conferida com as vendas) ou como <b>uso frequente</b> (proprietário, funcionário, prestador...: não entra na contagem).</div>
       ${sc.map(([pl, s]) => `<div class="conf-item"><span><span class="pl">${esc(pl)}</span> · ${s.n} passage${s.n === 1 ? "m" : "ns"} · última ${new Date(s.ultimo).toLocaleDateString("pt-BR", { timeZone: "America/Bahia" })}</span>
-        ${pode("cadastrar_veiculos") ? `<button class="link" type="button" data-cadastrar="${esc(pl)}">Cadastrar</button>` : ""}</div>`).join("")}` : "";
+        ${pode("cadastrar_veiculos") ? `<span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="acaoLinha" type="button" data-cadastrar="${esc(pl)}">Caçamba</button><button class="acaoLinha" type="button" data-frequente="${esc(pl)}">Uso frequente</button></span>` : ""}</div>`).join("")}` : "";
     $("lprConf").innerHTML = (A.leituras || Object.keys(A.dias).length ? resumo + html : '<div class="vazio">Nenhuma leitura da câmera nesse período.</div>') + listaSC;
     $$("[data-cadastrar]").forEach(b => b.onclick = () => { $("buscaVeiculo").value = b.dataset.cadastrar; abrirVeiculo(null); });
+    $$("[data-frequente]").forEach(b => b.onclick = () => { $("buscaVeiculo").value = b.dataset.frequente; abrirVeiculo(null, "ignorado"); });
     ligarAcoes($("lprConf"));
     const itemDe = (chave) => Object.values(A.dias).flatMap(x => x.itens).find(i => i.chave === chave);
     $$("#lprConf [data-confirmar]").forEach(b => b.onclick = () => decidirCamera([itemDe(b.dataset.confirmar)], "confirmada"));
