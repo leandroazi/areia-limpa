@@ -659,6 +659,7 @@ table.lpr input[type=checkbox] { width: auto; margin: 0; }
   <aside id="dash" class="oculto">
     <div class="dashTopo"><h2>Painel de vendas</h2><span class="sub" id="dashAtualizado"></span></div>
     <div class="kpis" id="dashKpis"></div>
+    <div id="dashCamera"></div>
     <div class="cartao grafico">
       <div class="topo"><h2>Cargas por dia</h2><span class="sub">últimos 14 dias</span></div>
       <div id="dashCargas"></div>
@@ -2608,62 +2609,136 @@ function passagens(leituras, correcoes) {
   }
   return out;
 }
+/**
+ * Cruza câmera × vendas e devolve as divergências de cada dia, já com a análise do gestor (se houver).
+ * Faturamento nunca vem daqui: só as vendas lançadas contam. O que a câmera aponta fica "a conferir".
+ */
+async function analisarCamera(de, ate) {
+  const fimAte = new Date(new Date(`${ate}T00:00:00-03:00`).getTime() + 864e5).toISOString();
+  const [{ data: dl, error: e1 }, vendas, { data: decs }] = await Promise.all([
+    db.rpc("dados_lpr", { de, ate }),
+    buscarTudo(() => db.from("carregamentos").select(CAMPOS_VENDA + ",ficticio").eq("ficticio", false)
+      .gte("data", `${de}T00:00:00-03:00`).lt("data", fimAte).order("data")),
+    db.from("conferencias_camera").select("*").gte("dia", de).lte("dia", ate),
+  ]);
+  if (e1) throw e1;
+  const decisao = Object.fromEntries((decs || []).map(x => [x.chave, x]));
+  const pass = passagens(dl.leituras, dl.correcoes || []);
+  const tipo = Object.fromEntries(veiculos.map(v => [v.placa, v]));
+  const dias = {};
+  const dia = (d) => (dias[d] ||= { pass: {}, vendas: {}, semPlaca: 0, nCac: 0, nVendas: 0, itens: [] });
+  const semCadastro = {};
+  for (const p of pass) {
+    const d = dia(diaBahia(p.ini));
+    if (!p.placa || !placaValida(p.placa)) { d.semPlaca++; continue; }   // sem placa ou leitura incompleta
+    const v = tipo[p.placa];
+    if (v?.tipo === "ignorado") continue;
+    if (!v) { const s = (semCadastro[p.placa] ||= { n: 0, ultimo: 0 }); s.n++; s.ultimo = Math.max(s.ultimo, p.ini); continue; }
+    (d.pass[p.placa] ||= []).push(p.ini); d.nCac++;
+  }
+  for (const v of vendas) { vendasPorId[v.id] = v; const d = dia(diaBahia(v.data)); (d.vendas[v.placa] ||= []).push(v); d.nVendas++; }
+  for (const [dd, x] of Object.entries(dias)) {
+    const placas = new Set([...Object.keys(x.pass), ...Object.keys(x.vendas)]);
+    for (const pl of placas) {
+      const ps = [...(x.pass[pl] || [])].sort((a, b) => a - b), vs = [...(x.vendas[pl] || [])];
+      // casa cada passagem com a venda da mesma placa de horário mais próximo
+      const sobra = [];
+      for (const t of ps) {
+        let k = -1, best = Infinity;
+        vs.forEach((v, i) => { const dt = Math.abs(new Date(v.data).getTime() - t); if (dt < best) { best = dt; k = i; } });
+        if (k >= 0) vs.splice(k, 1); else sobra.push(t);
+      }
+      for (const t of sobra) { const chave = `passagem:${pl}:${Math.round(t / 1000)}`; x.itens.push({ tipo: "passagem_sem_venda", chave, dia: dd, placa: pl, t, dec: decisao[chave] }); }
+      for (const v of vs) { const chave = `venda:${v.id}`; x.itens.push({ tipo: "venda_sem_camera", chave, dia: dd, placa: pl, t: new Date(v.data).getTime(), venda: v, dec: decisao[chave] }); }
+    }
+    x.itens.sort((a, b) => a.t - b.t);
+  }
+  return { dias, semCadastro, leituras: dl.leituras.length };
+}
+const hhBahia = (t) => new Date(t).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bahia" });
+let ultimaAnaliseCamera = null;
 async function conferirLpr() {
   const de = $("lprDe").value, ate = $("lprAte").value;
   if (!de || !ate || de > ate) return msg("lprConf", "Escolha o período.");
   $("lprConf").innerHTML = '<div class="vazio">Conferindo…</div>';
   try {
-    const [{ data: dl, error: e1 }, vendas] = await Promise.all([
-      db.rpc("dados_lpr", { de, ate }),
-      buscarTudo(() => db.from("carregamentos").select("id,data,placa,ficticio").eq("ficticio", false)
-        .gte("data", `${de}T00:00:00-03:00`).lt("data", new Date(new Date(`${ate}T00:00:00-03:00`).getTime() + 864e5).toISOString()).order("data")),
-    ]);
-    if (e1) throw e1;
-    const pass = passagens(dl.leituras, dl.correcoes || []);
-    const tipo = Object.fromEntries(veiculos.map(v => [v.placa, v]));
-    const dias = {};
-    const dia = (d) => (dias[d] ||= { pass: {}, vendas: {}, semPlaca: 0, nCac: 0, nVendas: 0 });
-    const semCadastro = {};
-    for (const p of pass) {
-      const d = dia(diaBahia(p.ini));
-      if (!p.placa || !placaValida(p.placa)) { d.semPlaca++; continue; }   // sem placa ou leitura incompleta
-      const v = tipo[p.placa];
-      if (v?.tipo === "ignorado") continue;
-      if (!v) { const s = (semCadastro[p.placa] ||= { n: 0, ultimo: 0 }); s.n++; s.ultimo = Math.max(s.ultimo, p.ini); }
-      (d.pass[p.placa] ||= []).push(p.ini);
-      if (v) d.nCac++;
-    }
-    for (const v of vendas) { const d = dia(diaBahia(v.data)); (d.vendas[v.placa] ||= []).push(new Date(v.data).getTime()); d.nVendas++; }
-    const hh = (t) => new Date(t).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bahia" });
-    let html = "", totSem = 0, totSemPass = 0;
-    for (const d of Object.keys(dias).sort().reverse()) {
-      const x = dias[d], itens = [];
-      for (const [pl, ts] of Object.entries(x.pass)) {
-        if (!tipo[pl]) continue;                    // não cadastrada: vai para a lista abaixo
-        const n = (x.vendas[pl] || []).length;
-        if (ts.length > n) { itens.push(`<div class="conf-item"><span><span class="pl">${esc(pl)}</span> passou ${ts.length}× e tem ${n} venda${n === 1 ? "" : "s"}</span><span class="sai">${ts.map(hh).join(", ")}</span></div>`); totSem += ts.length - n; }
-      }
-      for (const [pl, ts] of Object.entries(x.vendas)) {
-        const n = (x.pass[pl] || []).length;
-        if (ts.length > n) { itens.push(`<div class="conf-item"><span><span class="pl">${esc(pl)}</span> venda sem passagem na câmera${n ? ` (${ts.length} vendas, ${n} passagens)` : ""}</span><span>${ts.map(hh).join(", ")}</span></div>`); totSemPass += ts.length - n; }
-      }
+    const A = ultimaAnaliseCamera = await analisarCamera(de, ate);
+    const gestor = perfil?.papel === "gestor";
+    let html = "", pend = 0, analisadas = 0, pendPass = 0, pendVenda = 0;
+    for (const d of Object.keys(A.dias).sort().reverse()) {
+      const x = A.dias[d];
+      const itens = x.itens.map(it => {
+        const nome = esc(nomeCliente(veiculoDe(it.placa)));
+        const desc = it.tipo === "passagem_sem_venda"
+          ? `<span class="pl">${esc(it.placa)}</span> ${nome} · <b>passou na câmera às ${hhBahia(it.t)} sem venda</b>`
+          : `<span class="pl">${esc(it.placa)}</span> ${nome} · venda ${hhBahia(it.t)} (${moeda(it.venda.valor)}) <b>sem passagem na câmera</b>${/\[planilha\]/.test(it.venda.observacao || "") ? ' <span class="tag cin">planilha · hora estimada</span>' : ""}`;
+        if (it.dec) {
+          analisadas++;
+          const rot = it.dec.decisao === "confirmada" ? "Venda confirmada" : "Não carregou";
+          return `<div class="conf-item"><span>${desc}<br><span class="sub">✓ ${rot} por ${esc(it.dec.usuario_nome || "—")} em ${new Date(it.dec.feito_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}: ${esc(it.dec.justificativa)}</span></span>
+            ${gestor ? `<button class="link" type="button" data-desfazer="${esc(it.chave)}">Desfazer</button>` : ""}</div>`;
+        }
+        pend++; it.tipo === "passagem_sem_venda" ? pendPass++ : pendVenda++;
+        const acoes = !gestor ? '<span class="tag aviso">a conferir</span>' : it.tipo === "passagem_sem_venda"
+          ? `<span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="acaoLinha" type="button" data-lancar-pass="${esc(it.chave)}">Lançar venda</button><button class="acaoLinha" type="button" data-nao-carregou="${esc(it.chave)}">Não carregou</button></span>`
+          : `<span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="acaoLinha" type="button" data-confirmar="${esc(it.chave)}">Confirmar venda</button><button class="acaoLinha" type="button" data-alterar-venda="${it.venda.id}">Alterar</button></span>`;
+        return `<div class="conf-item"><span>${desc}</span>${acoes}</div>`;
+      });
+      const pendDia = x.itens.filter(i => !i.dec && i.tipo === "venda_sem_camera").length;
       html += `<div class="conf-dia"><h3><span>${new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
         <span class="sub">${x.nCac} passagens de caçambas · ${x.nVendas} vendas${x.semPlaca ? ` · ${x.semPlaca} sem placa legível` : ""}</span></h3>
-        ${itens.join("") || '<div class="conf-ok">✓ Câmera e vendas batem</div>'}</div>`;
+        ${itens.join("") || '<div class="conf-ok">✓ Câmera e vendas batem</div>'}
+        ${gestor && pendDia > 1 ? `<button class="link" type="button" data-confirmar-dia="${d}">Confirmar as ${pendDia} vendas sem câmera deste dia</button>` : ""}</div>`;
     }
-    const sc = Object.entries(semCadastro).sort((a, b) => b[1].n - a[1].n);
+    const sc = Object.entries(A.semCadastro).sort((a, b) => b[1].n - a[1].n);
     const resumo = `<div class="caixa" style="margin-top:12px">
-      <div><span>Passou sem venda</span><b class="${totSem ? "sai" : ""}">${totSem}</b></div>
-      <div><span>Venda sem câmera</span><b>${totSemPass}</b></div>
+      <div><span>A conferir</span><b class="${pend ? "sai" : "ent"}">${pend}</b></div>
+      <div><span>Já analisadas</span><b>${analisadas}</b></div>
+      <div><span>Passou sem venda</span><b class="${pendPass ? "sai" : ""}">${pendPass}</b></div>
+      <div><span>Venda sem câmera</span><b>${pendVenda}</b></div>
       <div><span>Placas sem cadastro</span><b>${sc.length}</b></div>
-      <div><span>Leituras no período</span><b>${dl.leituras.length}</b></div></div>`;
+      <div><span>Leituras no período</span><b>${A.leituras}</b></div></div>
+      <div class="sub" style="margin-top:6px">O faturamento conta só as vendas lançadas. O que a câmera aponta de diferente fica aqui até o gestor analisar: <b>confirmar a venda</b> (a câmera não leu), <b>alterar/cancelar</b> a venda, <b>lançar</b> a venda que faltou ou marcar que <b>não carregou</b>. Tudo fica registrado com a justificativa.</div>`;
     const listaSC = sc.length ? `<h2 style="margin-top:16px">Placas lidas sem cadastro</h2>
       <div class="sub">Cadastre as caçambas (ou marque como "Outros" os carros que não compram areia) para a conferência ficar completa.</div>
       ${sc.map(([pl, s]) => `<div class="conf-item"><span><span class="pl">${esc(pl)}</span> · ${s.n} passage${s.n === 1 ? "m" : "ns"} · última ${new Date(s.ultimo).toLocaleDateString("pt-BR", { timeZone: "America/Bahia" })}</span>
         ${pode("cadastrar_veiculos") ? `<button class="link" type="button" data-cadastrar="${esc(pl)}">Cadastrar</button>` : ""}</div>`).join("")}` : "";
-    $("lprConf").innerHTML = (dl.leituras.length ? resumo + html : '<div class="vazio">Nenhuma leitura da câmera nesse período. Envie o arquivo acima.</div>') + listaSC;
+    $("lprConf").innerHTML = (A.leituras || Object.keys(A.dias).length ? resumo + html : '<div class="vazio">Nenhuma leitura da câmera nesse período.</div>') + listaSC;
     $$("[data-cadastrar]").forEach(b => b.onclick = () => { $("buscaVeiculo").value = b.dataset.cadastrar; abrirVeiculo(null); });
+    ligarAcoes($("lprConf"));
+    const itemDe = (chave) => Object.values(A.dias).flatMap(x => x.itens).find(i => i.chave === chave);
+    $$("#lprConf [data-confirmar]").forEach(b => b.onclick = () => decidirCamera([itemDe(b.dataset.confirmar)], "confirmada"));
+    $$("#lprConf [data-nao-carregou]").forEach(b => b.onclick = () => decidirCamera([itemDe(b.dataset.naoCarregou)], "nao_carregou"));
+    $$("#lprConf [data-confirmar-dia]").forEach(b => b.onclick = () => decidirCamera(A.dias[b.dataset.confirmarDia].itens.filter(i => !i.dec && i.tipo === "venda_sem_camera"), "confirmada"));
+    $$("#lprConf [data-desfazer]").forEach(b => b.onclick = async () => {
+      if (!confirm("Desfazer esta análise? O item volta para \"a conferir\".")) return;
+      const { error } = await db.from("conferencias_camera").delete().eq("chave", b.dataset.desfazer);
+      if (error) return alert(traduzir(error));
+      conferirLpr(); carregarDash();
+    });
+    $$("#lprConf [data-lancar-pass]").forEach(b => b.onclick = () => {
+      const it = itemDe(b.dataset.lancarPass);
+      mostrarTela("telaCargas");
+      if ($("formCarga").classList.contains("oculto")) abrirPainel("formCarga");
+      escolherPlaca(it.placa);
+      const d = new Date(it.t); $("quando").value = new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+      $("obs").value = `Passagem da câmera às ${hhBahia(it.t)} (conferência)`;
+      msg("msgCarga", "Confira o material, o valor e a forma de pagamento antes de lançar. Depois de lançada, a passagem passa a bater com a venda.", "aviso");
+    });
   } catch (e) { $("lprConf").innerHTML = ""; msg("lprConf", traduzir(e)); }
+}
+async function decidirCamera(itens, decisao) {
+  itens = itens.filter(Boolean);
+  if (!itens.length) return;
+  const sugestao = decisao === "confirmada" ? "Venda confirmada; a câmera não leu a placa" : "Passou na portaria, mas não carregou";
+  const j = prompt(`${decisao === "confirmada" ? "Confirmar" : "Marcar como \"não carregou\""} ${itens.length > 1 ? itens.length + " itens" : itens[0].placa}.\nJustificativa (fica registrada):`, sugestao);
+  if (j === null) return;
+  if (j.trim().length < 3) return alert("Escreva a justificativa.");
+  const linhas = itens.map(i => ({ chave: i.chave, dia: i.dia, tipo: i.tipo, placa: i.placa, decisao, justificativa: j.trim().slice(0, 300),
+    carregamento_id: i.venda?.id ?? null, passagem_em: i.tipo === "passagem_sem_venda" ? new Date(i.t).toISOString() : null }));
+  const { error } = await db.from("conferencias_camera").upsert(linhas, { onConflict: "chave" });
+  if (error) return alert(traduzir(error));
+  conferirLpr(); carregarDash();
 }
 $("btnConferirLpr").onclick = conferirLpr;
 
@@ -3002,7 +3077,25 @@ async function carregarDash() {
     $("dashClientes").innerHTML = top.map(([n, c]) => `<div class="l"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n)}</span><span class="t"><i style="width:${(c / maxC * 100).toFixed(1)}%"></i></span><span class="n">${c} cargas</span></div>`).join("") || '<div class="vazio">Sem cargas no período.</div>';
     $("dashAtualizado").textContent = "atualizado às " + hora(new Date());
     carregarCombustivel();
+    pendenciasCameraDash();
   } catch (e) { $("dashAtualizado").textContent = "não foi possível carregar o painel"; }
+}
+/** Painel: quantas divergências da câmera (últimos 7 dias) ainda aguardam análise. Não entram no faturamento. */
+async function pendenciasCameraDash() {
+  const el = $("dashCamera");
+  if (!pode("importar_lpr")) { el.innerHTML = ""; return; }
+  try {
+    const ate = hojeISO(), d = new Date(ate + "T12:00:00"); d.setDate(d.getDate() - 6);
+    const A = await analisarCamera(d.toISOString().slice(0, 10), ate);
+    const pend = Object.values(A.dias).flatMap(x => x.itens).filter(i => !i.dec);
+    const pass = pend.filter(i => i.tipo === "passagem_sem_venda").length, vend = pend.length - pass;
+    el.innerHTML = pend.length
+      ? `<button type="button" class="cartao" id="btnDashCamera" style="width:100%;text-align:left;border:0;cursor:pointer;background:#FBF0D9;color:#8A5B00;margin-bottom:12px">
+          <b>${pend.length} item(ns) da câmera a conferir</b> (7 dias)<br><span style="font-size:13px">${pass ? `${pass} passagem(ns) sem venda` : ""}${pass && vend ? " · " : ""}${vend ? `${vend} venda(s) sem câmera` : ""}. Passagem sem venda não entra no faturamento; só depois de analisada. Toque para conferir.</span></button>`
+      : `<div class="sub" style="margin:0 0 10px">✓ Câmera e vendas conferidas nos últimos 7 dias.</div>`;
+    const b = $("btnDashCamera");
+    if (b) b.onclick = () => { mostrarTela("telaCamera"); abrirCamera(); conferirLpr(); setTimeout(() => $("lprConf").scrollIntoView({ behavior: "smooth" }), 400); };
+  } catch (_) { el.innerHTML = ""; }
 }
 // ---- Combustível (só gestor): litros ou R$ por dia / semana / mês; toque no gráfico alterna ----
 let combustivel = { lista: null, per: "dia", metrica: "valor" };
